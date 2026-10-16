@@ -27,19 +27,20 @@
   --accent:#3fbf9e; --typeA:#f0a33a; --typeB:#a98cf2; --boom:#ff5a4c; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ok:#5cc28a;
   --map:#121a17; --grid:#24302b; --gridtxt:#5f6f67; color-scheme:dark}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
-.wrap{max-width:1280px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px;display:flex;flex-direction:column;gap:18px}
+.wrap{max-width:1640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px;display:flex;flex-direction:column;gap:18px}
 header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px}
 h1{font-family:var(--f-display);font-weight:700;font-size:1.9rem;letter-spacing:.01em;margin:0;text-wrap:balance}
 .sub{color:var(--muted);font-size:.95rem}
 .stats{display:flex;flex-wrap:wrap;gap:8px 22px;font-family:var(--f-mono);font-size:.82rem;color:var(--muted)}
 .stats b{color:var(--ink);font-weight:600}
-.grid{display:grid;grid-template-columns:minmax(0,500px) minmax(0,1fr);gap:20px;align-items:start}
-@media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,500px);gap:20px;align-items:start}
+@media (max-width:1000px){.grid{grid-template-columns:minmax(0,1fr)}}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;min-width:0}
-.mapbox{position:relative}
-canvas{display:block;width:100%;aspect-ratio:1/1;max-width:100%;background:var(--map);border-radius:6px;touch-action:none}
+.mapbox{position:sticky;top:calc(16px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;align-items:center}
+@media (max-width:1000px){.mapbox{position:relative;top:auto}}
+canvas{display:block;width:100%;aspect-ratio:1/1;max-width:min(100%,max(360px,calc(100vh - 230px)));background:var(--map);border-radius:6px;touch-action:none}
 .tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);font-size:.78rem;font-family:var(--f-mono);padding:5px 8px;border-radius:4px;white-space:nowrap;transform:translate(-50%,-120%)}
-.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.82rem;color:var(--muted);margin-top:10px}
+.legend{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 16px;font-size:.82rem;color:var(--muted);margin-top:10px}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .sw{width:10px;height:10px;border-radius:50%;display:inline-block}
 .sw.a{background:var(--typeA)} .sw.b{background:var(--typeB);transform:rotate(45deg);border-radius:1px;width:9px;height:9px}
@@ -198,6 +199,8 @@ const DATA = {"step":0.25,"pulls":[{"n":1,"clock":"21:29:25","dur":51.9,"kill":f
 const STEP = DATA.step;
 const $ = id => document.getElementById(id);
 const cv = $('map'), ctx = cv.getContext('2d');
+const L = 1120; // logical drawing size; the backing store is sized to the on-screen canvas
+function fitCanvas(){ const r=cv.getBoundingClientRect(); const px=Math.max(300, Math.round(r.width*(window.devicePixelRatio||1))); if(cv.width!==px){ cv.width=px; cv.height=px; } ctx.setTransform(px/L,0,0,px/L,0,0); }
 
 // ---- flatten casts
 const CASTS = [];
@@ -263,22 +266,22 @@ function setView(vis){
   if (st.frame==='boss'){
     let m = 0; pts.forEach(q=>m=Math.max(m,Math.abs(q[0]),Math.abs(q[1])));
     m = Math.min(Math.ceil((m+2)/5)*5, 45);
-    VIEW = {cx:0, cy:0, s: (cv.width/2-40)/m, m};
+    VIEW = {cx:0, cy:0, s: (L/2-40)/m, m};
   } else {
     const xs=pts.map(q=>q[0]), ys=pts.map(q=>q[1]);
     const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
     const span=Math.max(x1-x0,y1-y0)+8;
-    VIEW = {cx:(x0+x1)/2, cy:(y0+y1)/2, s:(cv.width-60)/span};
+    VIEW = {cx:(x0+x1)/2, cy:(y0+y1)/2, s:(L-60)/span};
   }
 }
-function toPx(c,p){ const q=orient(framePt(c,p)); return [cv.width/2+(q[0]-VIEW.cx)*VIEW.s, cv.height/2+(q[1]-VIEW.cy)*VIEW.s]; }
+function toPx(c,p){ const q=orient(framePt(c,p)); return [L/2+(q[0]-VIEW.cx)*VIEW.s, L/2+(q[1]-VIEW.cy)*VIEW.s]; }
 
 let HIT = [];
 function draw(model){
-  const W=cv.width, H=cv.height;
+  fitCanvas(); const W=L, H=L;
   ctx.clearRect(0,0,W,H);
   const grid=css('--grid'), gtx=css('--gridtxt');
-  ctx.font = `22px ${css('--f-mono')||'monospace'}`;
+  ctx.font = `19px ${css('--f-mono')||'monospace'}`;
   // rings or grid
   if (st.frame==='boss'){
     ctx.strokeStyle=grid; ctx.lineWidth=2; ctx.fillStyle=gtx; ctx.textAlign='left';
@@ -320,7 +323,7 @@ function draw(model){
     const [x,y]=toPx(o.c,o.p); const isSel=o.n===sel; const fade = sel && !isSel;
     const col = st.color==='type' ? (o.v.type==='A'?cA:cB) : playerColor(o.n);
     ctx.globalAlpha = fade?0.18:0.9; ctx.fillStyle=col;
-    const r = isSel?11:7;
+    const r = isSel?13:9;
     if(o.v.type==='A'){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); }
     else { ctx.beginPath(); ctx.moveTo(x,y-r*1.25); ctx.lineTo(x+r*1.25,y); ctx.lineTo(x,y+r*1.25); ctx.lineTo(x-r*1.25,y); ctx.closePath(); ctx.fill(); }
     if(isSel){ ctx.globalAlpha=1; ctx.lineWidth=3; ctx.strokeStyle=ink; ctx.stroke();
@@ -415,14 +418,15 @@ $('booms').addEventListener('click', e=>{ const b=e.target.closest('.boomrow'); 
 const pick = n => { st.sel = st.sel===n?null:n; render(); };
 $('tbl').addEventListener('click', e=>{ const th=e.target.closest('th[data-sort]'); if(th){ const k=th.dataset.sort; if(st.sort===k) st.asc=!st.asc; else {st.sort=k; st.asc=(k==='name'||k==='nn');} render(); return; } const tr=e.target.closest('tr[data-n]'); if(tr) pick(tr.dataset.n); });
 $('tbl').addEventListener('keydown', e=>{ const tr=e.target.closest('tr[data-n]'); if(tr && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); pick(tr.dataset.n); } });
-function nearest(ev){ const r=cv.getBoundingClientRect(); const x=(ev.clientX-r.left)*cv.width/r.width, y=(ev.clientY-r.top)*cv.height/r.height; let best=null,bd=22; HIT.forEach(h=>{ const d=Math.hypot(h.x-x,h.y-y); if(d<bd){bd=d;best=h;} }); return {best, r, x, y}; }
+function nearest(ev){ const r=cv.getBoundingClientRect(); const x=(ev.clientX-r.left)*L/r.width, y=(ev.clientY-r.top)*L/r.height; let best=null,bd=22; HIT.forEach(h=>{ const d=Math.hypot(h.x-x,h.y-y); if(d<bd){bd=d;best=h;} }); return {best, r, x, y}; }
 cv.addEventListener('mousemove', ev=>{ const {best,r}=nearest(ev); const tip=$('tip'); if(!best){tip.hidden=true;return;} const o=best.o;
   let nn=Infinity; Object.entries(o.c.players).forEach(([n,v])=>{ if(n!==o.n && v.s[st.k]) nn=Math.min(nn,d2(o.p,v.s[st.k])); });
   tip.textContent=`${o.n} · Pull ${o.c.pull} #${o.c.idx} · ${o.v.type} · nearest ${nn.toFixed(1)} yd`; tip.hidden=false;
-  tip.style.left=(best.x*r.width/cv.width+cv.offsetLeft)+'px'; tip.style.top=(best.y*r.height/cv.height+cv.offsetTop)+'px'; });
+  tip.style.left=(best.x*r.width/L+cv.offsetLeft)+'px'; tip.style.top=(best.y*r.height/L+cv.offsetTop)+'px'; });
 cv.addEventListener('mouseleave', ()=>$('tip').hidden=true);
 cv.addEventListener('click', ev=>{ const {best}=nearest(ev); pick(best?best.o.n:st.sel); });
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+let rzT; new ResizeObserver(()=>{ clearTimeout(rzT); rzT=setTimeout(render,60); }).observe(cv);
 new MutationObserver(render).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 document.fonts && document.fonts.ready.then(render);
 

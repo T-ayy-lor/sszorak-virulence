@@ -317,23 +317,24 @@ let HIT = [];
 // Raid-plan slots: the plan image was matched onto the same floor image (0.32 scale), then
 // converted to world coordinates. 2nd Virulence uses the same layout turned 180° about the room center.
 const ASSIGN = {"slots":{"Phurry":1,"Integralgrip":2,"Sueldh":3,"Sighhigh":4,"Tayluor":5,"Jeckw":6,"Waynegry":7,"Whispersix":8,"Kiirelan":9,"Daragnos":10,"Calexanich":11,"Monostereo":12,"Yuña":13,"Progenesis":14,"Neineimuu":16,"Zynzii":18,"Aktapewpew":20},"pos":{"1":{"Neineimuu":[392.15,422.37],"Zynzii":[398.34,430.31],"Kiirelan":[387.92,432.25],"Daragnos":[368.41,420.69],"Jeckw":[375.54,430.57],"Calexanich":[391.66,443.18],"Monostereo":[356.94,422.23],"Waynegry":[380.9,441.1],"Whispersix":[364.01,430.86],"Yuña":[385.16,452.26],"Progenesis":[351.68,431.65],"Phurry":[372.79,447.99],"Integralgrip":[361.1,440.97],"Sighhigh":[375.53,456.94],"Sueldh":[363.97,449.83],"Tayluor":[351.09,442.5],"Aktapewpew":[387.96,409.63],"__boss":[370.23,439.15]},"2":{"Neineimuu":[383.85,396.63],"Zynzii":[377.66,388.69],"Kiirelan":[388.08,386.75],"Daragnos":[407.59,398.31],"Jeckw":[400.46,388.43],"Calexanich":[384.34,375.82],"Monostereo":[419.06,396.77],"Waynegry":[395.1,377.9],"Whispersix":[411.99,388.14],"Yuña":[390.84,366.74],"Progenesis":[424.32,387.35],"Phurry":[403.21,371.01],"Integralgrip":[414.9,378.03],"Sighhigh":[400.47,362.06],"Sueldh":[412.03,369.17],"Tayluor":[424.91,376.5],"Aktapewpew":[388.04,409.37],"__boss":[405.77,379.85]}}};
-function drawAssign(model, sel, avgItems){
+function drawAssign(model, sel, avgItems, pass){
   if (!st.assign) return;
   const groups = [...new Set(model.vis.map(c=>c.idx))];
   const mink = css('--mapink');
   groups.forEach(g=>{
     const pos = ASSIGN.pos[g]; if(!pos) return;
     // planned boss spot
-    const bp = pos.__boss; if (bp){ const [x,y]=toPx(null,bp); ctx.globalAlpha=sel?0.3:0.8; ctx.setLineDash([5,5]); ctx.lineWidth=2.5; ctx.strokeStyle=mink; ctx.beginPath(); ctx.arc(x,y,16,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1; }
+    const bp = pos.__boss; if (bp && pass==='rings'){ const [x,y]=toPx(null,bp); ctx.globalAlpha=sel?0.3:0.8; ctx.setLineDash([5,5]); ctx.lineWidth=2.5; ctx.strokeStyle=mink; ctx.beginPath(); ctx.arc(x,y,16,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1; }
     Object.entries(pos).forEach(([n,p])=>{
       if (n==='__boss' || !shown(n) || !model.rows.some(r=>r.name===n)) return;
       const [x,y]=toPx(null,p); const isSel=n===sel, fade=sel && !isSel;
       ctx.globalAlpha = fade?0.18:1;
       const it = avgItems && avgItems.find(i=>i.n===n && i.i===g);
-      if (it){ const [ax,ay]=toPx(null,it.m); ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(x,y); ctx.strokeStyle=playerColor(n,.7); ctx.lineWidth=isSel?3:2; ctx.setLineDash([6,5]); ctx.stroke(); ctx.setLineDash([]); }
+      if (pass==='lines'){ if (it){ const [ax,ay]=toPx(null,it.m); ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(x,y); ctx.strokeStyle=playerColor(n,.7); ctx.lineWidth=isSel?3:2; ctx.setLineDash([6,5]); ctx.stroke(); ctx.setLineDash([]); } ctx.globalAlpha=1; return; }
       const r=isSel?17:14;
       ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fill();
-      ctx.lineWidth=isSel?4:3; ctx.strokeStyle=playerColor(n); ctx.stroke();
+      ctx.lineWidth=isSel?4.5:3.5; ctx.strokeStyle=playerColor(n); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x,y,r+2.6,0,Math.PI*2); ctx.lineWidth=1.6; ctx.strokeStyle='rgba(0,0,0,.75)'; ctx.stroke();
       ctx.font=`700 15px ${css('--f-mono')||'monospace'}`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle=mink; ctx.fillText(String(ASSIGN.slots[n]||''), x, y+1);
       ctx.globalAlpha=1;
       const dist = it ? d2(it.m,p) : NaN;
@@ -349,7 +350,7 @@ function drawAverages(model, sel, mink, acc){
     const cs = model.vis.filter(c=>c.idx===+i && c.players[r.name] && c.players[r.name].s[st.k]);
     items.push({n:r.name, i:+i, m, drift:r.drift, type: cs.length===1 ? cs[0].players[r.name].type : null});
   }));
-  drawAssign(model, sel, items);
+  drawAssign(model, sel, items, 'lines');
   items.sort((a,b)=>(a.n===sel)-(b.n===sel));
   ctx.textAlign='center'; ctx.textBaseline='bottom';
   items.forEach(it=>{
@@ -369,6 +370,7 @@ function drawAverages(model, sel, mink, acc){
     ctx.globalAlpha=1;
     HIT.push({x,y,n:it.n,label:`${it.n} · ${it.i===1?'1st':'2nd'} Virulence ${it.type?'· type '+it.type+' ':''}average · drift ${isFinite(it.drift)?it.drift.toFixed(1)+' yd':'–'}`});
   });
+  drawAssign(model, sel, items, 'rings');
   ctx.textBaseline='alphabetic';
 }
 function draw(model){
@@ -411,7 +413,6 @@ function draw(model){
       ctx.strokeStyle=playerColor(sel,.55); ctx.lineWidth=3; ctx.stroke();
     });
   }
-  drawAssign(model, sel, null);
   // dots
   const order = [];
   model.vis.forEach(c=>Object.entries(c.players).forEach(([n,v])=>{ const p=v.s[st.k]; if(p && shown(n)) order.push({c,n,v,p}); }));
@@ -439,6 +440,7 @@ function draw(model){
     const [x,y]=toPx(c,[b[2],b[3]]); ctx.strokeStyle=boomC; ctx.lineWidth=4; ctx.globalAlpha = b[0]<=st.k*STEP+0.01 ? 1 : 0.35;
     ctx.beginPath(); ctx.moveTo(x-10,y-10); ctx.lineTo(x+10,y+10); ctx.moveTo(x+10,y-10); ctx.lineTo(x-10,y+10); ctx.stroke(); ctx.globalAlpha=1;
   }));
+  drawAssign(model, sel, null, 'rings');
 }
 
 // ---- table
@@ -510,7 +512,7 @@ $('booms').addEventListener('click', e=>{ const b=e.target.closest('.boomrow'); 
 const pick = n => { st.sel = st.sel===n?null:n; render(); };
 $('tbl').addEventListener('click', e=>{ const th=e.target.closest('th[data-sort]'); if(th){ const k=th.dataset.sort; if(st.sort===k) st.asc=!st.asc; else {st.sort=k; st.asc=(k==='name'||k==='drift');} render(); return; } const tr=e.target.closest('tr[data-n]'); if(tr) pick(tr.dataset.n); });
 $('tbl').addEventListener('keydown', e=>{ const tr=e.target.closest('tr[data-n]'); if(tr && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); pick(tr.dataset.n); } });
-function nearest(ev){ const r=cv.getBoundingClientRect(); const x=(ev.clientX-r.left)*L/r.width, y=(ev.clientY-r.top)*L/r.height; let best=null,bd=22; HIT.forEach(h=>{ const d=Math.hypot(h.x-x,h.y-y); if(d<bd){bd=d;best=h;} }); return {best, r, x, y}; }
+function nearest(ev){ const r=cv.getBoundingClientRect(); const x=(ev.clientX-r.left)*L/r.width, y=(ev.clientY-r.top)*L/r.height; let best=null,bd=22; HIT.forEach(h=>{ const d=Math.hypot(h.x-x,h.y-y); if(d<=bd){bd=d;best=h;} }); return {best, r, x, y}; }
 cv.addEventListener('mousemove', ev=>{ const {best,r}=nearest(ev); const tip=$('tip'); if(!best){tip.hidden=true;return;}
   tip.textContent=best.label; tip.hidden=false;
   tip.style.left=(best.x*r.width/L+cv.offsetLeft)+'px'; tip.style.top=(best.y*r.height/L+cv.offsetTop)+'px'; });

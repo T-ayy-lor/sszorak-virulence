@@ -13,7 +13,7 @@
 :root{
   --bg:#eef1ee; --panel:#f8faf8; --ink:#17201c; --muted:#5d6a63; --line:#d3dbd5;
   --accent:#16806a; --typeA:#c77b12; --typeB:#7a4fd0; --boom:#d23a2e; --warn:#b7791f; --warn-bg:#fbefd9; --crit:#c0392b; --crit-bg:#f8dcd8; --ok:#2f7d4f;
-  --map:#fbfcfb; --grid:#dfe6e1; --gridtxt:#8a978f;
+  --map:#151c19; --grid:#26322d; --gridtxt:#74867d; --mapink:#e6eee9; --ccp:58%;
   --f-display:"Barlow Semi Condensed","Arial Narrow",sans-serif;
   --f-body:"Source Sans 3",system-ui,-apple-system,sans-serif;
   --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
@@ -21,11 +21,11 @@
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0f1513; --panel:#161e1b; --ink:#e3ebe6; --muted:#93a39a; --line:#2a3631;
   --accent:#3fbf9e; --typeA:#f0a33a; --typeB:#a98cf2; --boom:#ff5a4c; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ok:#5cc28a;
-  --map:#121a17; --grid:#24302b; --gridtxt:#5f6f67; color-scheme:dark}}
+  --ccp:100%; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0f1513; --panel:#161e1b; --ink:#e3ebe6; --muted:#93a39a; --line:#2a3631;
   --accent:#3fbf9e; --typeA:#f0a33a; --typeB:#a98cf2; --boom:#ff5a4c; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ok:#5cc28a;
-  --map:#121a17; --grid:#24302b; --gridtxt:#5f6f67; color-scheme:dark}
+  --ccp:100%; color-scheme:dark}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
 .wrap{max-width:1640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px;display:flex;flex-direction:column;gap:18px}
 header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px}
@@ -43,7 +43,7 @@ canvas{display:block;width:100%;aspect-ratio:1/1;max-width:min(100%,max(360px,ca
 .legend{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 16px;font-size:.82rem;color:var(--muted);margin-top:10px}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .sw{width:10px;height:10px;border-radius:50%;display:inline-block}
-.sw.a{background:var(--typeA)} .sw.b{background:var(--typeB);transform:rotate(45deg);border-radius:1px;width:9px;height:9px}
+.sw.a{background:var(--muted)} .sw.b{background:var(--muted);transform:rotate(45deg);border-radius:1px;width:9px;height:9px}
 .sw.x{background:none;color:var(--boom);font-weight:700;width:auto;height:auto;font-family:var(--f-mono)}
 .controls{display:flex;flex-direction:column;gap:14px}
 .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
@@ -83,7 +83,9 @@ tbody tr.sel{background:color-mix(in srgb,var(--accent) 16%,transparent)}
 .pill{display:inline-block;padding:1px 7px;border-radius:999px}
 .pill.warn{background:var(--warn-bg);color:var(--warn)}
 .pill.crit{background:var(--crit-bg);color:var(--crit)}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:middle;box-shadow:0 0 0 1px color-mix(in srgb,var(--ink) 35%,transparent)}
+.pn{color:color-mix(in srgb,var(--cc) var(--ccp),#000)}
+.spec{font-weight:400;font-size:.76rem;color:var(--muted);margin-left:6px}
 h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 8px;letter-spacing:.02em}
 .booms{display:flex;flex-direction:column;gap:2px}
 .boomrow{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;padding:7px 6px;border-radius:5px;cursor:pointer;font-size:.86rem;border:0;background:transparent;color:var(--ink);text-align:left;font-family:var(--f-body)}
@@ -111,10 +113,10 @@ h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 8px
       <canvas id="map" width="1120" height="1120" aria-label="Map of player positions during Virulence"></canvas>
       <div class="tip" id="tip" hidden></div>
       <div class="legend" id="legend">
-        <span><i class="sw a"></i>Virulence A (1297707)</span>
+        <span>Color = class</span><span><i class="sw a"></i>Virulence A (1297707)</span>
         <span><i class="sw b"></i>Virulence B (1299899)</span>
         <span><i class="sw x">✕</i>Explosion (1300089)</span>
-        <span><i class="sw" style="background:var(--ink);opacity:.4"></i>Sszorak at 5 s</span><span>Grid = 10 yd</span>
+        <span><i class="sw" style="background:var(--muted)"></i>Sszorak at 5 s</span><span>Grid = 10 yd</span>
       </div>
     </div>
 
@@ -126,15 +128,10 @@ h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 8px
           <span class="val" id="momentVal"></span>
         </div>
         <div class="row">
-          <span class="lbl">Too close</span>
-          <input type="range" id="radius" min="2" max="20" step="0.5" value="8" aria-label="Too-close radius in yards">
-          <span class="val" id="radiusVal"></span>
-        </div>
-        <div class="row">
           <span class="lbl">Map</span>
-          <div class="seg" id="colorSeg">
-            <button type="button" id="cType" aria-pressed="true">By debuff</button>
-            <button type="button" id="cPlayer" aria-pressed="false">By player</button>
+          <div class="seg" id="healSeg">
+            <button type="button" id="hShow" aria-pressed="true">Show healers</button>
+            <button type="button" id="hHide" aria-pressed="false">Hide healers</button>
           </div>
           <button type="button" class="btn" id="rot" title="Rotate the map 90°">Rotate</button>
           <button type="button" class="btn" id="mir" title="Mirror the map">Mirror</button>
@@ -156,15 +153,13 @@ h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 8px
       </div>
 
       <div class="panel">
-        <h2>Players at this moment</h2>
+        <h2>Positioning consistency</h2>
         <div class="tablewrap">
           <table id="tbl">
             <thead><tr>
               <th data-sort="name">Player</th>
               <th data-sort="n" title="Virulence casts this player had the debuff in">Casts</th>
-              <th data-sort="drift" title="Median distance from their own average spot in the room. Lower = same spot every pull.">Drift</th>
-              <th data-sort="nn" title="Median distance to the closest other player">Nearest</th>
-              <th data-sort="close" title="Share of casts with any player inside the too-close radius">Close</th>
+              <th data-sort="drift" title="Median distance from their own usual spot. Lower = same spot every pull.">Drift</th>
             </tr></thead>
             <tbody></tbody>
           </table>
@@ -172,9 +167,7 @@ h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 8px
         <p class="note">Click a player to highlight their dots across every selected cast, with their average spot and movement trail. Every column uses only the casts selected above, measured at the Moment slider's time.</p>
         <dl class="defs">
           <dt>Casts</dt><dd>Number of selected Virulence casts where this player had the debuff and a recorded position at the chosen moment.</dd>
-          <dt>Drift</dt><dd>How consistently they stand in the same place. Their average spot is the mean of their room positions across those casts; Drift is the median distance in yards from that average spot. Low = same spot every pull.</dd>
-          <dt>Nearest</dt><dd>Median distance in yards to the closest other player, across those casts. Low = they tend to stand on top of someone.</dd>
-          <dt>Close</dt><dd>Percent of those casts where any other player was inside the Too-close radius.</dd>
+          <dt>Drift</dt><dd>How consistently they stand in the same place. Their usual spot is the average of their room positions, worked out separately for 1st and 2nd Virulence because the boss is in a different place for each. Drift is the median distance in yards from that usual spot. Low = same spot every pull. Shows – when the player has fewer than 2 casts of the same Virulence number selected.</dd>
         </dl>
       </div>
     </div>
@@ -189,7 +182,7 @@ h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 8px
       <h2>How this was measured</h2>
       <p class="note">Each player's position comes from the X/Y coordinates Advanced Combat Logging writes on every event involving them, sampled every 0.25 s for 6.5 s after Virulence lands. The debuff lasts 5 s, so the default moment (4.75 s) shows where everyone stood just before it ends.</p>
       <p class="note">Positions are drawn in room coordinates. Faded dark dots mark where Sszorak stood 5 s into each selected cast; the 2nd Virulence happens with the boss in a different part of the room, so filter to 1st or 2nd casts to compare like with like.</p>
-      <p class="note">The log does not contain Virulence's hit radius, so "Too close" uses the slider value. The map is drawn north-up from world coordinates; Rotate and Mirror adjust it to match how your raid calls positions.</p>
+      <p class="note">The map is drawn north-up from world coordinates; Rotate and Mirror adjust it to match how your raid calls positions.</p>
     </div>
   </div>
 </div>
@@ -213,13 +206,31 @@ DATA.pulls.forEach(p => {
   });
 });
 const NAMES = [...new Set(CASTS.flatMap(c => Object.keys(c.players)))].sort((a,b)=>a.localeCompare(b));
-const HUE = {}; NAMES.forEach((n,i)=>HUE[n]=Math.round(i*360/NAMES.length*7)%360);
-const playerColor = (n, a=1) => `hsla(${HUE[n]},65%,${isDark()?62:44}%,${a})`;
+const SPEC_OF = {"Aktapewpew": 254, "Calexanich": 258, "Daragnos": 266, "Integralgrip": 250, "Jeckw": 259, "Kiirelan": 102, "Monostereo": 266, "Neineimuu": 64, "Phurry": 73, "Progenesis": 1480, "Roychi": 270, "Shènròn": 1468, "Sighhigh": 269, "Snakespeare": 257, "Sueldh": 577, "Tayluor": 70, "Waynegry": 71, "Whispersix": 71, "Yuña": 258, "Zynzii": 264};
+// specID -> [class, spec, role]
+const SPECS = {250:['Death Knight','Blood','tank'],251:['Death Knight','Frost','dps'],252:['Death Knight','Unholy','dps'],
+  577:['Demon Hunter','Havoc','dps'],581:['Demon Hunter','Vengeance','tank'],1480:['Demon Hunter','Devourer','dps'],
+  102:['Druid','Balance','dps'],103:['Druid','Feral','dps'],104:['Druid','Guardian','tank'],105:['Druid','Restoration','healer'],
+  1467:['Evoker','Devastation','dps'],1468:['Evoker','Preservation','healer'],1473:['Evoker','Augmentation','dps'],
+  253:['Hunter','Beast Mastery','dps'],254:['Hunter','Marksmanship','dps'],255:['Hunter','Survival','dps'],
+  62:['Mage','Arcane','dps'],63:['Mage','Fire','dps'],64:['Mage','Frost','dps'],
+  268:['Monk','Brewmaster','tank'],269:['Monk','Windwalker','dps'],270:['Monk','Mistweaver','healer'],
+  65:['Paladin','Holy','healer'],66:['Paladin','Protection','tank'],70:['Paladin','Retribution','dps'],
+  256:['Priest','Discipline','healer'],257:['Priest','Holy','healer'],258:['Priest','Shadow','dps'],
+  259:['Rogue','Assassination','dps'],260:['Rogue','Outlaw','dps'],261:['Rogue','Subtlety','dps'],
+  262:['Shaman','Elemental','dps'],263:['Shaman','Enhancement','dps'],264:['Shaman','Restoration','healer'],
+  265:['Warlock','Affliction','dps'],266:['Warlock','Demonology','dps'],267:['Warlock','Destruction','dps'],
+  71:['Warrior','Arms','dps'],72:['Warrior','Fury','dps'],73:['Warrior','Protection','tank']};
+const CLASS_COLOR = {'Death Knight':'#C41E3A','Demon Hunter':'#A330C9','Druid':'#FF7C0A','Evoker':'#33937F','Hunter':'#AAD372','Mage':'#3FC7EB','Monk':'#00FF98','Paladin':'#F48CBA','Priest':'#FFFFFF','Rogue':'#FFF468','Shaman':'#0070DD','Warlock':'#8788EE','Warrior':'#C69B6D'};
+const info = n => SPECS[SPEC_OF[n]] || ['Unknown','','dps'];
+const classHex = n => CLASS_COLOR[info(n)[0]] || '#999999';
+const playerColor = (n, a=1) => { const h=classHex(n); return a>=1? h : h + Math.round(a*255).toString(16).padStart(2,'0'); };
+const shown = n => st.healers || info(n)[2] !== 'healer';
 function isDark(){ const t=document.documentElement.dataset.theme; if(t) return t==='dark'; return matchMedia('(prefers-color-scheme: dark)').matches; }
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 // ---- state
-const st = {k:19, R:8, frame:'room', color:'type', rot:0, mir:false, sel:null, on:new Set(CASTS.map(c=>c.id)), sort:'close', asc:false};
+const st = {k:19, R:8, frame:'room', healers:true, rot:0, mir:false, sel:null, on:new Set(CASTS.map(c=>c.id)), sort:'drift', asc:true};
 try { const s = JSON.parse(localStorage.getItem('vir-ui')||'{}'); if (s.rot!=null) st.rot=s.rot; if (s.mir!=null) st.mir=s.mir; if (s.R) st.R=s.R; } catch(e){}
 function save(){ try{ localStorage.setItem('vir-ui', JSON.stringify({rot:st.rot,mir:st.mir,R:st.R})); }catch(e){} }
 
@@ -231,22 +242,23 @@ function framePt(c, p){ return st.frame==='boss' && c.boss ? [p[0]-c.boss[0], p[
 
 // ---- metrics
 function compute(){
-  const per = {}; NAMES.forEach(n=>per[n]={name:n,rel:[],nn:[],close:0,opp:0,n:0,boom:0,died:0});
+  const per = {}; NAMES.forEach(n=>per[n]={name:n,relBy:{},nn:[],close:0,opp:0,n:0,boom:0,died:0});
   const vis = CASTS.filter(c=>st.on.has(c.id));
   vis.forEach(c=>{
-    const pts = Object.entries(c.players).filter(([n,v])=>v.s[st.k]).map(([n,v])=>({n,t:v.type,p:v.s[st.k]}));
+    const pts = Object.entries(c.players).filter(([n,v])=>v.s[st.k] && shown(n)).map(([n,v])=>({n,t:v.type,p:v.s[st.k]}));
     pts.forEach(a=>{
       let nn=Infinity, no=Infinity;
       pts.forEach(b=>{ if(a===b) return; const d=d2(a.p,b.p); if(d<nn) nn=d; if(b.t!==a.t && d<no) no=d; });
       const r=per[a.n]; r.n++; if(isFinite(nn)) r.nn.push(nn);
       if(nn<st.R) r.close++; if(no<st.R) r.opp++;
-      r.rel.push(a.p);
+      (r.relBy[c.idx] ||= []).push(a.p);
     });
     new Set(c.booms.map(b=>b[1])).forEach(n=>{ if(per[n]) per[n].boom += c.booms.filter(b=>b[1]===n).length>0?1:0; });
   });
-  const rows = Object.values(per).filter(r=>r.n>0).map(r=>{
-    const mean = r.rel.length ? [r.rel.reduce((s,q)=>s+q[0],0)/r.rel.length, r.rel.reduce((s,q)=>s+q[1],0)/r.rel.length] : null;
-    return {...r, mean, drift: mean? median(r.rel.map(q=>d2(q,mean))) : NaN, nnMed: median(r.nn), closeP: r.close/r.n, oppP: r.opp/r.n};
+  const rows = Object.values(per).filter(r=>r.n>0 && shown(r.name)).map(r=>{
+    const means = {}, dists = [];
+    Object.entries(r.relBy).forEach(([i,L])=>{ if(L.length<2) return; const m=[L.reduce((s,q)=>s+q[0],0)/L.length, L.reduce((s,q)=>s+q[1],0)/L.length]; means[i]=m; L.forEach(q=>dists.push(d2(q,m))); });
+    return {...r, means, drift: dists.length? median(dists) : NaN, nnMed: median(r.nn), closeP: r.close/r.n, oppP: r.opp/r.n};
   });
   return {rows, vis};
 }
@@ -261,7 +273,7 @@ function orient(p){ // world [X,Y] -> screen-ish [u,v] with north up (X north, Y
 }
 function setView(vis){
   let pts = [];
-  vis.forEach(c=>Object.values(c.players).forEach(v=>v.s.forEach(p=>{ if(p) pts.push(orient(framePt(c,p))); })));
+  vis.forEach(c=>Object.entries(c.players).forEach(([n,v])=>shown(n) && v.s.forEach(p=>{ if(p) pts.push(orient(framePt(c,p))); })));
   if (!pts.length){ VIEW={cx:0,cy:0,s:1}; return; }
   if (st.frame==='boss'){
     let m = 0; pts.forEach(q=>m=Math.max(m,Math.abs(q[0]),Math.abs(q[1])));
@@ -297,19 +309,19 @@ function draw(model){
   const nq = orient([1,0]); ctx.save(); ctx.translate(W-46,46); ctx.fillStyle=gtx; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText('N', nq[0]*26, nq[1]*26); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(nq[0]*14,nq[1]*14); ctx.strokeStyle=gtx; ctx.stroke(); ctx.restore();
 
-  const cA=css('--typeA'), cB=css('--typeB'), boomC=css('--boom'), ink=css('--ink'), acc=css('--accent');
+  const cA=css('--typeA'), cB=css('--typeB'), boomC=css('--boom'), ink=css('--ink'), mink=css('--mapink'), acc=css('--accent');
   HIT=[];
   const sel=st.sel;
   // boss markers (room frame)
   model.vis.forEach(c=>{
     if(!c.boss) return; const [x,y]= st.frame==='boss'?[W/2,H/2]:toPx(c,c.boss);
-    ctx.fillStyle=ink; ctx.globalAlpha= st.frame==='boss'?0.85:0.35; ctx.beginPath(); ctx.arc(x,y,st.frame==='boss'?12:8,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
+    ctx.fillStyle=mink; ctx.globalAlpha= st.frame==='boss'?0.85:0.35; ctx.beginPath(); ctx.arc(x,y,st.frame==='boss'?12:8,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
   });
   if(st.frame==='boss'){ ctx.fillStyle=gtx; ctx.textAlign='center'; ctx.fillText('Sszorak', W/2, H/2+38); }
   // too-close radius around selected player's dots
   // trails for selected
   if(sel){
-    model.vis.forEach(c=>{ const v=c.players[sel]; if(!v) return;
+    model.vis.forEach(c=>{ const v=c.players[sel]; if(!v || !shown(sel)) return;
       ctx.beginPath(); let started=false;
       for(let k=0;k<=st.k;k++){ const p=v.s[k]; if(!p) continue; const [x,y]=toPx(c,p); if(!started){ctx.moveTo(x,y);started=true;} else ctx.lineTo(x,y); }
       ctx.strokeStyle=playerColor(sel,.55); ctx.lineWidth=3; ctx.stroke();
@@ -317,26 +329,24 @@ function draw(model){
   }
   // dots
   const order = [];
-  model.vis.forEach(c=>Object.entries(c.players).forEach(([n,v])=>{ const p=v.s[st.k]; if(p) order.push({c,n,v,p}); }));
+  model.vis.forEach(c=>Object.entries(c.players).forEach(([n,v])=>{ const p=v.s[st.k]; if(p && shown(n)) order.push({c,n,v,p}); }));
   order.sort((a,b)=> (a.n===sel) - (b.n===sel));
   order.forEach(o=>{
     const [x,y]=toPx(o.c,o.p); const isSel=o.n===sel; const fade = sel && !isSel;
-    const col = st.color==='type' ? (o.v.type==='A'?cA:cB) : playerColor(o.n);
-    ctx.globalAlpha = fade?0.18:0.9; ctx.fillStyle=col;
+    ctx.globalAlpha = fade?0.16:0.95; ctx.fillStyle=playerColor(o.n);
     const r = isSel?13:9;
     if(o.v.type==='A'){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); }
     else { ctx.beginPath(); ctx.moveTo(x,y-r*1.25); ctx.lineTo(x+r*1.25,y); ctx.lineTo(x,y+r*1.25); ctx.lineTo(x-r*1.25,y); ctx.closePath(); ctx.fill(); }
-    if(isSel){ ctx.globalAlpha=1; ctx.lineWidth=3; ctx.strokeStyle=ink; ctx.stroke();
-      ctx.beginPath(); ctx.arc(x,y,st.R*VIEW.s,0,Math.PI*2); ctx.setLineDash([6,8]); ctx.lineWidth=1.5; ctx.strokeStyle=playerColor(sel,.6); ctx.stroke(); ctx.setLineDash([]); }
+    if(!fade){ ctx.lineWidth=isSel?3:1.5; ctx.strokeStyle=isSel?mink:'rgba(0,0,0,.55)'; ctx.stroke(); }
     ctx.globalAlpha=1;
     HIT.push({x,y,o});
   });
   // average spot for selected (boss frame)
   if(sel){
     const r=model.rows.find(r=>r.name===sel);
-    if(r && r.mean){ const q=orient(r.mean); const x=W/2+(q[0]-VIEW.cx)*VIEW.s, y=H/2+(q[1]-VIEW.cy)*VIEW.s;
+    if(r && r.means) Object.values(r.means).forEach(m=>{ const q=orient(m); const x=W/2+(q[0]-VIEW.cx)*VIEW.s, y=H/2+(q[1]-VIEW.cy)*VIEW.s;
       ctx.beginPath(); ctx.arc(x,y,r.drift*VIEW.s,0,Math.PI*2); ctx.fillStyle=playerColor(sel,.12); ctx.fill(); ctx.strokeStyle=acc; ctx.lineWidth=2.5; ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x-9,y); ctx.lineTo(x+9,y); ctx.moveTo(x,y-9); ctx.lineTo(x,y+9); ctx.strokeStyle=acc; ctx.lineWidth=3; ctx.stroke(); }
+      ctx.beginPath(); ctx.moveTo(x-9,y); ctx.lineTo(x+9,y); ctx.moveTo(x,y-9); ctx.lineTo(x,y+9); ctx.strokeStyle=acc; ctx.lineWidth=3; ctx.stroke(); });
   }
   // explosions
   model.vis.forEach(c=>c.booms.forEach(b=>{
@@ -347,7 +357,7 @@ function draw(model){
 }
 
 // ---- table
-const COLS = {name:r=>r.name, n:r=>r.n, drift:r=>r.drift, nn:r=>r.nnMed, close:r=>r.closeP};
+const COLS = {name:r=>r.name, n:r=>r.n, drift:r=>r.drift};
 function flag(vals, v, higherBad=true){
   const f = vals.filter(x=>isFinite(x)).sort((a,b)=>a-b); if(f.length<4||!isFinite(v)) return '';
   const q = p => f[Math.min(f.length-1, Math.floor(p*(f.length-1)))];
@@ -357,16 +367,14 @@ function flag(vals, v, higherBad=true){
 }
 function table(model){
   const rows=[...model.rows]; const f=COLS[st.sort];
-  rows.sort((a,b)=>{ const x=f(a), y=f(b); const r = typeof x==='string'? x.localeCompare(y) : ((isFinite(y)?y:-1)-(isFinite(x)?x:-1)); return st.asc?-r:r; });
+  rows.sort((a,b)=>{ const x=f(a), y=f(b); if(typeof x==='string') return st.asc? x.localeCompare(y) : y.localeCompare(x); const fx=isFinite(x), fy=isFinite(y); if(fx!==fy) return fx?-1:1; if(!fx) return 0; return st.asc? x-y : y-x; });
   const all = k => model.rows.map(COLS[k]);
   const pct = v => `${Math.round(v*100)}%`;
   const cell = (txt,cls) => cls?`<span class="pill ${cls}">${txt}</span>`:txt;
   $('tbl').querySelector('tbody').innerHTML = rows.map(r=>`<tr tabindex="0" data-n="${r.name}" class="${r.name===st.sel?'sel':''}">
-    <td><span class="dot" style="background:${playerColor(r.name)}"></span>${r.name}</td>
+    <td style="--cc:${classHex(r.name)}"><span class="dot" style="background:${classHex(r.name)}"></span><span class="pn">${r.name}</span><span class="spec">${info(r.name)[1]} ${info(r.name)[0]}</span></td>
     <td>${r.n}</td>
-    <td>${cell(isFinite(r.drift)?r.drift.toFixed(1)+' yd':'–', flag(all('drift'),r.drift))}</td>
-    <td>${cell(isFinite(r.nnMed)?r.nnMed.toFixed(1)+' yd':'–', flag(all('nn'),r.nnMed,false))}</td>
-    <td>${cell(pct(r.closeP), flag(all('close'),r.closeP))}</td></tr>`).join('');
+    <td>${cell(isFinite(r.drift)?r.drift.toFixed(1)+' yd':'–', flag(all('drift'),r.drift))}</td></tr>`).join('');
   document.querySelectorAll('th[data-sort]').forEach(th=>{ th.classList.toggle('on', th.dataset.sort===st.sort); th.classList.toggle('asc', st.asc); });
 }
 
@@ -380,15 +388,14 @@ function boomList(){
   const L = CASTS.filter(c=>c.booms.length);
   $('booms').innerHTML = L.map(c=>{
     const seen=new Set(); const parts=[];
-    c.booms.forEach(b=>{ if(seen.has(b[1])) return; seen.add(b[1]); const t=c.players[b[1]]?.type; parts.push(`<span class="t${t||''}">${b[1]}</span> <span class="when">${b[0].toFixed(2)}s</span>`); });
+    c.booms.forEach(b=>{ if(seen.has(b[1])) return; seen.add(b[1]); const t=c.players[b[1]]?.type; parts.push(`<span class="pn" style="--cc:${classHex(b[1])};font-weight:600">${b[1]}</span><span class="when"> ${t||'?'}</span> <span class="when">${b[0].toFixed(2)}s</span>`); });
     return `<button type="button" class="boomrow" data-id="${c.id}"><span class="when">Pull ${c.pull} · #${c.idx}<br>${c.clock}</span><span class="who">${parts.join(', ')}</span></button>`;
-  }).join('') + `<p class="note">Click a chain to show only that cast at the moment just before the first explosion. Name color = that player's original debuff.</p>`;
+  }).join('') + `<p class="note">Click a chain to show only that cast at the moment just before the first explosion. Letter after each name = that player's original Virulence type.</p>`;
 }
 
 function render(){
   $('momentVal').textContent = `${(st.k*STEP).toFixed(2)} s`;
-  $('radiusVal').textContent = `${st.R} yd`;
-  $('moment').value=st.k; $('radius').value=st.R;
+  $('moment').value=st.k;
   const model = compute(); setView(model.vis); draw(model); table(model); chips();
 }
 
@@ -400,9 +407,8 @@ function stats(){
 
 // ---- events
 $('moment').addEventListener('input', e=>{ st.k=+e.target.value; render(); });
-$('radius').addEventListener('input', e=>{ st.R=+e.target.value; save(); render(); });
 const seg=(a,b,key,va,vb)=>{ $(a).onclick=()=>{st[key]=va;$(a).setAttribute('aria-pressed','true');$(b).setAttribute('aria-pressed','false');render();}; $(b).onclick=()=>{st[key]=vb;$(b).setAttribute('aria-pressed','true');$(a).setAttribute('aria-pressed','false');render();}; };
-seg('cType','cPlayer','color','type','player');
+seg('hShow','hHide','healers',true,false);
 $('rot').onclick=()=>{ st.rot=(st.rot+1)%4; save(); render(); };
 $('mir').onclick=()=>{ st.mir=!st.mir; save(); render(); };
 const PRESETS = {all:c=>true, first:c=>c.idx===1, second:c=>c.idx===2};
@@ -416,12 +422,11 @@ $('chips').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(
   render(); });
 $('booms').addEventListener('click', e=>{ const b=e.target.closest('.boomrow'); if(!b) return; const c=CASTS.find(c=>c.id===b.dataset.id); st.on=new Set([c.id]); st.k=Math.max(0,Math.floor((c.booms[0][0]-0.05)/STEP)); render(); cv.scrollIntoView({behavior:'smooth',block:'center'}); });
 const pick = n => { st.sel = st.sel===n?null:n; render(); };
-$('tbl').addEventListener('click', e=>{ const th=e.target.closest('th[data-sort]'); if(th){ const k=th.dataset.sort; if(st.sort===k) st.asc=!st.asc; else {st.sort=k; st.asc=(k==='name'||k==='nn');} render(); return; } const tr=e.target.closest('tr[data-n]'); if(tr) pick(tr.dataset.n); });
+$('tbl').addEventListener('click', e=>{ const th=e.target.closest('th[data-sort]'); if(th){ const k=th.dataset.sort; if(st.sort===k) st.asc=!st.asc; else {st.sort=k; st.asc=(k==='name'||k==='drift');} render(); return; } const tr=e.target.closest('tr[data-n]'); if(tr) pick(tr.dataset.n); });
 $('tbl').addEventListener('keydown', e=>{ const tr=e.target.closest('tr[data-n]'); if(tr && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); pick(tr.dataset.n); } });
 function nearest(ev){ const r=cv.getBoundingClientRect(); const x=(ev.clientX-r.left)*L/r.width, y=(ev.clientY-r.top)*L/r.height; let best=null,bd=22; HIT.forEach(h=>{ const d=Math.hypot(h.x-x,h.y-y); if(d<bd){bd=d;best=h;} }); return {best, r, x, y}; }
 cv.addEventListener('mousemove', ev=>{ const {best,r}=nearest(ev); const tip=$('tip'); if(!best){tip.hidden=true;return;} const o=best.o;
-  let nn=Infinity; Object.entries(o.c.players).forEach(([n,v])=>{ if(n!==o.n && v.s[st.k]) nn=Math.min(nn,d2(o.p,v.s[st.k])); });
-  tip.textContent=`${o.n} · Pull ${o.c.pull} #${o.c.idx} · ${o.v.type} · nearest ${nn.toFixed(1)} yd`; tip.hidden=false;
+  tip.textContent=`${o.n} · Pull ${o.c.pull} · Virulence #${o.c.idx} · type ${o.v.type}`; tip.hidden=false;
   tip.style.left=(best.x*r.width/L+cv.offsetLeft)+'px'; tip.style.top=(best.y*r.height/L+cv.offsetTop)+'px'; });
 cv.addEventListener('mouseleave', ()=>$('tip').hidden=true);
 cv.addEventListener('click', ev=>{ const {best}=nearest(ev); pick(best?best.o.n:st.sel); });

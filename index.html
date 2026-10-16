@@ -139,8 +139,8 @@ h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 8px
         <div class="row">
           <span class="lbl">Assigned</span>
           <div class="seg" id="asgSeg">
-            <button type="button" id="aHide" aria-pressed="true">Hide spots</button>
-            <button type="button" id="aShow" aria-pressed="false">Show spots</button>
+            <button type="button" id="aHide" aria-pressed="false">Hide spots</button>
+            <button type="button" id="aShow" aria-pressed="true">Show spots</button>
           </div>
         </div>
         <div class="row">
@@ -252,7 +252,7 @@ function isDark(){ const t=document.documentElement.dataset.theme; if(t) return 
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 // ---- state
-const st = {k:20, R:8, frame:'room', healers:false, view:'avg', assign:false, rot:0, mir:false, sel:null, on:new Set(CASTS.map(c=>c.id)), sort:'drift', asc:true};
+const st = {k:20, R:8, frame:'room', healers:false, view:'avg', assign:true, rot:0, mir:false, sel:null, on:new Set(CASTS.map(c=>c.id)), sort:'drift', asc:true};
 try { const s = JSON.parse(localStorage.getItem('vir-ui')||'{}'); if (s.rot!=null) st.rot=s.rot; if (s.mir!=null) st.mir=s.mir; if (s.R) st.R=s.R; } catch(e){}
 function save(){ try{ localStorage.setItem('vir-ui', JSON.stringify({rot:st.rot,mir:st.mir,R:st.R})); }catch(e){} }
 

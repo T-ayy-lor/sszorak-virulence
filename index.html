@@ -168,7 +168,7 @@ h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 8px
           <dt>Moment</dt><dd>Seconds after Virulence lands. It goes off at 5.00 s; slide earlier or later to see where people were before and after.</dd>
           <dt>Show</dt><dd>Average spot puts one labeled dot per player at their average position for each Virulence. All positions shows every player's position on every selected cast, with circles and diamonds for the two Virulence types, movement trails, and explosions.</dd>
           <dt>Assigned</dt><dd>Shows each player's spot from the raid plan as a numbered ring in their class color.</dd>
-          <dt>Players</dt><dd>Hide healers removes Roychi, Shènròn, Snakespeare and Zynzii from the map and the table, since healers don't always have to spread.</dd>
+          <dt>Players</dt><dd>Hide healers removes Roychi, Shènròn and Snakespeare from the map and the table, since they stand outside the stack. Zynzii stays visible because they have an assigned spot.</dd>
           <dt>Casts</dt><dd>Which Virulence casts are included. 1st and 2nd Virulence pick that cast from every pull. Each button below is one cast, labeled pull · cast number; filled means included, and ✕ shows how many players exploded on it.</dd>
         </dl>
       </div>
@@ -247,12 +247,13 @@ const CLASS_COLOR = {'Death Knight':'#C41E3A','Demon Hunter':'#A330C9','Druid':'
 const info = n => SPECS[SPEC_OF[n]] || ['Unknown','','dps'];
 const classHex = n => CLASS_COLOR[info(n)[0]] || '#999999';
 const playerColor = (n, a=1) => { const h=classHex(n); return a>=1? h : h + Math.round(a*255).toString(16).padStart(2,'0'); };
-const shown = n => st.healers || info(n)[2] !== 'healer';
+// healers with an assigned spot in the raid plan (Zynzii) always stay visible
+const shown = n => st.healers || info(n)[2] !== 'healer' || (typeof ASSIGN !== 'undefined' && n in ASSIGN.slots);
 function isDark(){ const t=document.documentElement.dataset.theme; if(t) return t==='dark'; return matchMedia('(prefers-color-scheme: dark)').matches; }
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 // ---- state
-const st = {k:20, R:8, frame:'room', healers:false, view:'all', assign:true, rot:0, mir:false, sel:null, on:new Set(CASTS.map(c=>c.id)), sort:'drift', asc:true};
+const st = {k:20, R:8, frame:'room', healers:false, view:'all', assign:true, rot:0, mir:false, sel:null, on:new Set(CASTS.filter(c=>c.idx===1).map(c=>c.id)), sort:'drift', asc:true};
 try { const s = JSON.parse(localStorage.getItem('vir-ui')||'{}'); if (s.rot!=null) st.rot=s.rot; if (s.mir!=null) st.mir=s.mir; if (s.R) st.R=s.R; } catch(e){}
 function save(){ try{ localStorage.setItem('vir-ui', JSON.stringify({rot:st.rot,mir:st.mir,R:st.R})); }catch(e){} }
 

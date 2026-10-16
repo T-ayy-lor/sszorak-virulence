@@ -126,7 +126,7 @@ h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 8px
       <div class="panel controls">
         <div class="row">
           <span class="lbl">Moment</span>
-          <input type="range" id="moment" min="0" max="26" step="1" value="19" aria-label="Seconds after Virulence applied">
+          <input type="range" id="moment" min="0" max="26" step="1" value="20" aria-label="Seconds after Virulence applied">
           <span class="val" id="momentVal"></span>
         </div>
         <div class="row">
@@ -164,6 +164,13 @@ h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 8px
           </div>
         </div>
         <p class="note" id="selNote"></p>
+        <dl class="defs">
+          <dt>Moment</dt><dd>Seconds after Virulence lands. It goes off at 5.00 s; slide earlier or later to see where people were before and after.</dd>
+          <dt>Show</dt><dd>Average spot puts one labeled dot per player at their average position for each Virulence. All positions shows every player's position on every selected cast, with circles and diamonds for the two Virulence types, movement trails, and explosions.</dd>
+          <dt>Assigned</dt><dd>Shows each player's spot from the raid plan as a numbered ring in their class color.</dd>
+          <dt>Players</dt><dd>Hide healers removes Roychi, Shènròn, Snakespeare and Zynzii from the map and the table, since healers don't always have to spread.</dd>
+          <dt>Casts</dt><dd>Which Virulence casts are included. 1st and 2nd Virulence pick that cast from every pull. Each button below is one cast, labeled pull · cast number; filled means included, and ✕ shows how many players exploded on it.</dd>
+        </dl>
       </div>
 
       <div class="panel">
@@ -194,7 +201,7 @@ h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 8px
     </div>
     <div class="panel">
       <h2>How this was measured</h2>
-      <p class="note">Each player's position comes from the X/Y coordinates Advanced Combat Logging writes on every event involving them, sampled every 0.25 s for 6.5 s after Virulence lands. The debuff lasts 5 s, so the default moment (4.75 s) shows where everyone stood just before it ends.</p>
+      <p class="note">Each player's position comes from the X/Y coordinates Advanced Combat Logging writes on every event involving them, sampled every 0.25 s for 6.5 s after Virulence lands. Virulence goes off 5 s after it lands, so the default moment (5.00 s) shows where everyone stood when it went off.</p>
       <p class="note">Positions are drawn in room coordinates. Faded dark dots mark where Sszorak stood 5 s into each selected cast; the 2nd Virulence happens with the boss in a different part of the room, so filter to 1st or 2nd casts to compare like with like.</p>
       <p class="note">The room image is from raidstrats.gg. The log has no coordinates for that image, so it was lined up by hand: Sszorak's spawn point (the same spot every pull) sits at the platform center, the data is turned 59° counter-clockwise from north-up so Sszorak's tank spot points at the platform edge he is pulled to, and the scale was set so the area the raid stood in meets the platform's rim. Treat wall positions as close, not exact.</p>
       <p class="note">Assigned spots come from the raid plan image, matched onto the same floor image so each ring sits where the plan draws it. For the 2nd Virulence the same layout is turned 180° around the room center, because Sszorak is pulled to the opposite side of the platform. Healers with no spot in the plan have no ring.</p>
@@ -245,7 +252,7 @@ function isDark(){ const t=document.documentElement.dataset.theme; if(t) return 
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 // ---- state
-const st = {k:19, R:8, frame:'room', healers:false, view:'avg', assign:false, rot:0, mir:false, sel:null, on:new Set(CASTS.map(c=>c.id)), sort:'drift', asc:true};
+const st = {k:20, R:8, frame:'room', healers:false, view:'avg', assign:false, rot:0, mir:false, sel:null, on:new Set(CASTS.map(c=>c.id)), sort:'drift', asc:true};
 try { const s = JSON.parse(localStorage.getItem('vir-ui')||'{}'); if (s.rot!=null) st.rot=s.rot; if (s.mir!=null) st.mir=s.mir; if (s.R) st.R=s.R; } catch(e){}
 function save(){ try{ localStorage.setItem('vir-ui', JSON.stringify({rot:st.rot,mir:st.mir,R:st.R})); }catch(e){} }
 
@@ -337,7 +344,11 @@ function drawAssign(model, sel, avgItems){
 }
 function drawAverages(model, sel, mink, acc){
   const W=L, H=L, items=[];
-  model.rows.forEach(r=>Object.entries(r.means).forEach(([i,m])=>items.push({n:r.name, i:+i, m, drift:r.drift})));
+  model.rows.forEach(r=>Object.entries(r.means).forEach(([i,m])=>{
+    // with a single selected cast for this Virulence number, keep that cast's Virulence type shape
+    const cs = model.vis.filter(c=>c.idx===+i && c.players[r.name] && c.players[r.name].s[st.k]);
+    items.push({n:r.name, i:+i, m, drift:r.drift, type: cs.length===1 ? cs[0].players[r.name].type : null});
+  }));
   drawAssign(model, sel, items);
   items.sort((a,b)=>(a.n===sel)-(b.n===sel));
   ctx.textAlign='center'; ctx.textBaseline='bottom';
@@ -347,13 +358,16 @@ function drawAverages(model, sel, mink, acc){
     ctx.globalAlpha = fade?0.22:1;
     if(isSel && isFinite(it.drift)){ ctx.beginPath(); ctx.arc(x,y,it.drift*VIEW.s,0,Math.PI*2); ctx.fillStyle=playerColor(it.n,.14); ctx.fill(); ctx.strokeStyle=acc; ctx.lineWidth=2.5; ctx.stroke(); }
     const r=isSel?14:11;
-    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle=playerColor(it.n); ctx.fill();
+    ctx.beginPath();
+    if (it.type==='B'){ const k=r*1.25; ctx.moveTo(x,y-k); ctx.lineTo(x+k,y); ctx.lineTo(x,y+k); ctx.lineTo(x-k,y); ctx.closePath(); }
+    else ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle=playerColor(it.n); ctx.fill();
     ctx.lineWidth=isSel?3:2; ctx.strokeStyle=isSel?mink:'rgba(0,0,0,.6)'; ctx.stroke();
     ctx.font=`600 ${isSel?21:18}px ${css('--f-body')||'sans-serif'}`;
     ctx.lineWidth=5; ctx.strokeStyle='rgba(0,0,0,.75)'; ctx.strokeText(it.n, x, y-r-4);
     ctx.fillStyle=mink; ctx.fillText(it.n, x, y-r-4);
     ctx.globalAlpha=1;
-    HIT.push({x,y,n:it.n,label:`${it.n} · ${it.i===1?'1st':'2nd'} Virulence average · drift ${isFinite(it.drift)?it.drift.toFixed(1)+' yd':'–'}`});
+    HIT.push({x,y,n:it.n,label:`${it.n} · ${it.i===1?'1st':'2nd'} Virulence ${it.type?'· type '+it.type+' ':''}average · drift ${isFinite(it.drift)?it.drift.toFixed(1)+' yd':'–'}`});
   });
   ctx.textBaseline='alphabetic';
 }
@@ -453,7 +467,7 @@ function table(model){
 function chips(){
   $('chips').innerHTML = CASTS.map(c=>`<button type="button" class="chip" data-id="${c.id}" aria-pressed="${st.on.has(c.id)}" title="Pull ${c.pull} (${c.clock}), Virulence #${c.idx} at ${c.t.toFixed(0)}s">${c.id}${c.booms.length?`<span class="bm">✕${new Set(c.booms.map(b=>b[1])).size}</span>`:''}</button>`).join('');
   document.querySelectorAll('#presets button').forEach(b=>b.setAttribute('aria-pressed', String(sameSet(st.on, presetSet(b.dataset.p)))));
-  const n=st.on.size; $('selNote').textContent = `${n} of ${CASTS.length} Virulence casts selected across ${new Set(CASTS.filter(c=>st.on.has(c.id)).map(c=>c.pull)).size} pulls. Filled = included. From All, clicking a cast shows only that cast; after that, clicks add or remove casts. Label = pull · cast number; ✕ = players who exploded.`;
+  const n=st.on.size; $('selNote').textContent = `${n} of ${CASTS.length} Virulence casts selected across ${new Set(CASTS.filter(c=>st.on.has(c.id)).map(c=>c.pull)).size} pulls. From All, clicking a cast shows only that cast; after that, clicks add or remove casts.`;
 }
 function boomList(){
   const L = CASTS.filter(c=>c.booms.length);
@@ -468,7 +482,8 @@ function render(){
   $('momentVal').textContent = `${(st.k*STEP).toFixed(2)} s`;
   $('moment').value=st.k;
   $('lgAsg').hidden = !st.assign;
-  ['lgA','lgB','lgX'].forEach(id=>$(id).hidden = st.view!=='all'); $('lgAvg').hidden = st.view!=='avg';
+  const single = st.view==='avg' && [1,2].every(g=>CASTS.filter(c=>st.on.has(c.id) && c.idx===g).length<=1);
+  ['lgA','lgB'].forEach(id=>$(id).hidden = !(st.view==='all' || single)); $('lgX').hidden = st.view!=='all'; $('lgAvg').hidden = st.view!=='avg';
   const model = compute(); setView(model.vis); draw(model); table(model); chips();
 }
 

@@ -94,6 +94,13 @@ h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0 0 8px
 .boomrow .when{font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
 .boomrow .who{min-width:0}
 .tA{color:var(--typeA);font-weight:600}.tB{color:var(--typeB);font-weight:600}
+.pullrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.pullpills{display:flex;flex-wrap:wrap;gap:6px}
+.pp{font-family:var(--f-mono);font-size:.74rem;border:1px solid var(--line);border-radius:6px;padding:3px 8px;background:var(--panel);color:var(--ink);cursor:pointer;display:inline-flex;gap:6px}
+.pp:hover{border-color:var(--accent)}
+.pp .hp{color:var(--muted)}
+.pp.kill .hp{color:var(--ok);font-weight:600}
+.pp[aria-pressed=true]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,var(--panel))}
 .livebar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 14px;background:var(--panel);border:1px solid var(--line);border-radius:8px}
 .ldot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:none}
 .ldot.on{background:var(--ok);animation:pulse 2s infinite}
@@ -132,6 +139,7 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
     </div>
   </header>
   <div class="stats" id="stats"></div>
+  <div class="pullrow"><span class="lbl">Boss % by pull</span><div class="pullpills" id="pulls"></div></div>
   <div class="livebar" id="livebar">
     <span class="ldot" id="liveDot"></span>
     <span id="liveText"></span>
@@ -198,6 +206,7 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
           <dt>Show</dt><dd>Average spot puts one labeled dot per player at their average position for each Virulence. All positions shows every player's position on every selected cast, with circles and diamonds for the two Virulence types, movement trails, and explosions.</dd>
           <dt>Assigned</dt><dd>Shows each player's spot from the raid plan as a numbered ring in their class color.</dd>
           <dt>Players</dt><dd>Hide healers removes Roychi, Shènròn, Snakespeare and Zynzii from the map and the table, since healers stand outside the stack.</dd>
+          <dt>Boss %</dt><dd>The boss's health when each pull ended (the Oct 15 snapshot shows pull length instead). Click a pull to show only its casts.</dd>
           <dt>Casts</dt><dd>Which Virulence casts are included. 1st and 2nd Virulence pick that cast from every pull. Each button below is one cast, labeled pull · cast number; filled means included, and ✕ shows how many players exploded on it.</dd>
         </dl>
       </div>
@@ -217,7 +226,7 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
         <p class="note">Click a player to highlight their dots across every selected cast, with their average spot and movement trail. Every column uses only the casts selected above, measured at the Moment slider's time.</p>
         <dl class="defs">
           <dt>Casts</dt><dd>Number of selected Virulence casts where this player had the debuff and a recorded position at the chosen moment.</dd>
-          <dt>Drift</dt><dd>How consistently they stand in the same place. Their usual spot is the average of their room positions, worked out separately for 1st and 2nd Virulence because the boss is in a different place for each. Drift is the median distance in yards from that usual spot. Low = same spot every pull. Shows – when the player has fewer than 2 casts of the same Virulence number selected.</dd>
+          <dt>Drift</dt><dd>How consistently they stand in the same place. Neineimuu's positions only count from pull 9 on Oct 21 (21:39), when he moved to spot 17. Their usual spot is the average of their room positions, worked out separately for 1st and 2nd Virulence because the boss is in a different place for each. Drift is the median distance in yards from that usual spot. Low = same spot every pull. Shows – when the player has fewer than 2 casts of the same Virulence number selected.</dd>
         </dl>
       </div>
     </div>
@@ -262,6 +271,11 @@ const L = 1120; // logical drawing size; the backing store is sized to the on-sc
 function fitCanvas(){ const r=cv.getBoundingClientRect(); const px=Math.max(300, Math.round(r.width*(window.devicePixelRatio||1))); if(cv.width!==px){ cv.width=px; cv.height=px; } ctx.setTransform(px/L,0,0,px/L,0,0); }
 
 // ---- flatten casts
+// Drift resets: a player's positions only count from this pull on (used when their assigned spot changes).
+const RESETS = { Neineimuu: { date:'10/21/2026', clock:'21:39:45', note:'moved to spot 17 at pull 9 on Oct 21' } };
+const dkey = (d, clock) => { const [m, dd, y] = d.split('/'); return `${y}${m.padStart(2,'0')}${dd.padStart(2,'0')} ${clock.padStart(8,'0')}`; };
+Object.values(RESETS).forEach(r => r.key = dkey(r.date, r.clock));
+const pullKey = p => dkey(p.date || '10/15/2026', p.clock);
 let CASTS = [], NAMES = [];
 function buildCasts(){
   CASTS = [];
@@ -270,7 +284,9 @@ function buildCasts(){
     p.casts.forEach(c => {
       if (Object.keys(c.players).length < 6) return;
       i++;
-      CASTS.push({id: `P${p.n}·${i}`, pull: p.n, idx: i, clock: p.clock, kill: p.kill, ...c});
+      const players = {}; const pk = pullKey(p);
+      Object.entries(c.players).forEach(([n, v]) => { if (!(RESETS[n] && pk < RESETS[n].key)) players[n] = v; });
+      CASTS.push({id: `P${p.n}·${i}`, pull: p.n, idx: i, clock: p.clock, kill: p.kill, hp: p.hp, ...c, players});
     });
   });
   NAMES = [...new Set(CASTS.flatMap(c => Object.keys(c.players)))].sort((a,b)=>a.localeCompare(b));
@@ -516,9 +532,19 @@ function table(model){
 
 // ---- chips & booms
 function chips(){
-  $('chips').innerHTML = CASTS.map(c=>`<button type="button" class="chip" data-id="${c.id}" aria-pressed="${st.on.has(c.id)}" title="Pull ${c.pull} (${c.clock}), Virulence #${c.idx} at ${c.t.toFixed(0)}s">${c.id}${c.booms.length?`<span class="bm">✕${new Set(c.booms.map(b=>b[1])).size}</span>`:''}</button>`).join('');
+  $('chips').innerHTML = CASTS.map(c=>`<button type="button" class="chip" data-id="${c.id}" aria-pressed="${st.on.has(c.id)}" title="Pull ${c.pull} (${c.clock}), Virulence #${c.idx} at ${c.t.toFixed(0)}s${c.kill?' · kill':c.hp!=null?` · pull ended with the boss at ${(c.hp*100).toFixed(1)}%`:''}">${c.id}${c.booms.length?`<span class="bm">✕${new Set(c.booms.map(b=>b[1])).size}</span>`:''}</button>`).join('');
   document.querySelectorAll('#presets button').forEach(b=>b.setAttribute('aria-pressed', String(sameSet(st.on, presetSet(b.dataset.p)))));
   const n=st.on.size; $('selNote').textContent = `${n} of ${CASTS.length} Virulence casts selected across ${new Set(CASTS.filter(c=>st.on.has(c.id)).map(c=>c.pull)).size} pulls. From All, clicking a cast shows only that cast; after that, clicks add or remove casts.`;
+}
+function pullPills(){
+  $('pulls').innerHTML = DATA.pulls.map(p => {
+    const ids = CASTS.filter(c => c.pull === p.n).map(c => c.id);
+    const on = ids.length && ids.length === st.on.size && ids.every(id => st.on.has(id));
+    const m = Math.floor(p.dur / 60), s = String(Math.floor(p.dur % 60)).padStart(2, '0');
+    const hp = p.live ? 'live' : p.kill ? 'kill' : p.hp != null ? `${(p.hp * 100).toFixed(1)}%` : `${m}:${s}`;
+    const tip = `Pull ${p.n} · ${p.clock} · ${m}:${s}` + (p.kill ? ' · kill' : p.hp != null ? ` · boss at ${(p.hp * 100).toFixed(1)}% when it ended` : '') + (ids.length ? ' · click to show only this pull' : ' · no Virulence casts');
+    return `<button type="button" class="pp${p.kill ? ' kill' : ''}" data-n="${p.n}" aria-pressed="${!!on}" title="${tip}"${ids.length ? '' : ' disabled'}>#${p.n}<span class="hp">${hp}</span></button>`;
+  }).join('');
 }
 function boomList(){
   const L = CASTS.filter(c=>c.booms.length);
@@ -535,7 +561,7 @@ function render(){
   $('lgAsg').hidden = !st.assign;
   const single = st.view==='avg' && [1,2].every(g=>CASTS.filter(c=>st.on.has(c.id) && c.idx===g).length<=1);
   ['lgA','lgB'].forEach(id=>$(id).hidden = !(st.view==='all' || single)); $('lgX').hidden = st.view!=='all'; $('lgAvg').hidden = st.view!=='avg';
-  const model = compute(); setView(model.vis); draw(model); table(model); chips();
+  const model = compute(); setView(model.vis); draw(model); table(model); chips(); pullPills();
   if (!model.vis.length){ ctx.save(); ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(0,L/2-50,L,100); ctx.fillStyle='#e6eee9'; ctx.font=`600 30px ${css('--f-body')||'sans-serif'}`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(CASTS.length?'No casts selected':'No Virulence casts in these pulls yet', L/2, L/2); ctx.restore(); }
 }
 
@@ -559,6 +585,7 @@ $('chips').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(
   else if (st.on.has(id)) st.on.delete(id); else st.on.add(id);  // otherwise toggle
   if (!st.on.size) st.on=presetSet('all');
   render(); });
+$('pulls').addEventListener('click', e => { const b = e.target.closest('.pp'); if (!b || b.disabled) return; const ids = CASTS.filter(c => c.pull === +b.dataset.n).map(c => c.id); if (!ids.length) return; st.preset = null; st.on = new Set(ids); render(); });
 $('booms').addEventListener('click', e=>{ const b=e.target.closest('.boomrow'); if(!b) return; const c=CASTS.find(c=>c.id===b.dataset.id); st.preset=null; st.on=new Set([c.id]); st.k=Math.max(0,Math.floor((c.booms[0][0]-0.05)/STEP)); render(); cv.scrollIntoView({behavior:'smooth',block:'center'}); });
 const pick = n => { st.sel = st.sel===n?null:n; render(); };
 $('tbl').addEventListener('click', e=>{ const th=e.target.closest('th[data-sort]'); if(th){ const k=th.dataset.sort; if(st.sort===k) st.asc=!st.asc; else {st.sort=k; st.asc=(k==='name'||k==='drift');} render(); return; } const tr=e.target.closest('tr[data-n]'); if(tr) pick(tr.dataset.n); });

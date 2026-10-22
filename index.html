@@ -130,10 +130,6 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
   <div class="livebar" id="livebar">
     <span class="ldot" id="liveDot"></span>
     <span id="liveText"></span>
-    <button type="button" class="btn" id="btnReconnect" hidden>Reconnect</button>
-    <button type="button" class="btn" id="btnFolder">Connect Logs folder</button>
-    <button type="button" class="btn" id="btnFile">Open a log file</button>
-    <input type="file" id="fileIn" accept=".txt" hidden>
   </div>
 
   <div class="grid">
@@ -243,7 +239,7 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
     </div>
     <div class="panel">
       <h2>How this was measured</h2>
-      <p class="note">Live mode reads your combat log inside your browser every 3 seconds and only looks at Sszorak pulls. Nothing is uploaded anywhere. It needs Chrome or Edge on a computer, with this page opened directly (not inside another app).</p>
+      <p class="note">Tonight's data comes from an uploader script that reads the combat log and sends the Sszorak pulls after every pull or wipe. This page checks for new data every 30 seconds, and GitHub takes a minute or two to publish each upload.</p>
       <p class="note">Each player's position comes from the X/Y coordinates Advanced Combat Logging writes on every event involving them, sampled every 0.25 s for 6.5 s after Virulence lands. Virulence goes off 5 s after it lands, so the default moment (5.00 s) shows where everyone stood when it went off.</p>
       <p class="note">Positions are drawn in room coordinates. Faded dark dots mark where Sszorak stood 5 s into each selected cast; the 2nd Virulence happens with the boss in a different part of the room, so filter to 1st or 2nd casts to compare like with like.</p>
       <p class="note">The room image is from raidstrats.gg. The log has no coordinates for that image, so it was lined up by hand: Sszorak's spawn point (the same spot every pull) sits at the platform center, the data is turned 59° counter-clockwise from north-up so Sszorak's tank spot points at the platform edge he is pulled to, and the scale was set so the area the raid stood in meets the platform's rim. Treat wall positions as close, not exact.</p>
@@ -573,219 +569,16 @@ let rzT; new ResizeObserver(()=>{ clearTimeout(rzT); rzT=setTimeout(render,60); 
 new MutationObserver(render).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 document.fonts && document.fonts.ready.then(render);
 
-// ---- Live combat-log reader: parses Sszorak encounters out of WoWCombatLog-*.txt ----
-// Pure logic (no DOM). Feed text chunks with LP.feed(text); read LP.pulls.
-const LP = (() => {
-  const CFG = { enc: '3420', bossNpc: '-257347-', virA: '1297707', virB: '1299899', boom: '1300089' };
-  let MARK = 'ENCOUNTER_START,' + CFG.enc + ',';
-  const S = { pulls: [], cur: null, leftover: '', names: {}, pets: {}, specs: {}, dirty: false };
-
-  function configure(o){ Object.assign(CFG, o); MARK = 'ENCOUNTER_START,' + CFG.enc + ','; }
-  function reset(){ S.pulls = []; S.cur = null; S.leftover = ''; S.names = {}; S.pets = {}; S.specs = {}; S.dirty = true; }
-
-  function splitCSV(s){
-    if (s.indexOf('"') < 0) return s.split(',');
-    const out = []; let i = 0; const n = s.length;
-    while (i <= n){
-      if (s.charCodeAt(i) === 34){ let j = s.indexOf('"', i + 1); if (j < 0) j = n; out.push(s.slice(i + 1, j)); i = j + 2; }
-      else { let j = s.indexOf(',', i); if (j < 0) j = n; out.push(s.slice(i, j)); i = j + 1; }
-    }
-    return out;
-  }
-  // "10/21/2026 20:17:53.185-4  ..." -> seconds (absolute, local clock)
-  function tsSec(line){
-    const sp = line.indexOf(' '), d = line.slice(0, sp).split('/');
-    const tm = line.slice(sp + 1, line.indexOf('  ')).split(':');
-    return Date.UTC(+d[2], +d[0] - 1, +d[1]) / 1000 + (+tm[0]) * 3600 + (+tm[1]) * 60 + parseFloat(tm[2]);
-  }
-  function clockOf(line){ const sp = line.indexOf(' '); return line.slice(sp + 1, sp + 9).replace(/[.-].*$/, ''); }
-  function dateOf(line){ return line.slice(0, line.indexOf(' ')); }
-
-  function startPull(line, rest){
-    const r = splitCSV(rest);
-    S.cur = { n: S.pulls.length + 1, t0: tsSec(line), clock: clockOf(line), date: dateOf(line), diff: +r[3], size: +r[4],
-      ended: false, kill: false, dur: 0, lastT: 0, track: {}, names: {}, specGuid: {}, aura: [], boom: [], died: {},
-      bossGuid: null, boss: [], bossHp: null, dmg: {} };
-    S.pulls.push(S.cur); S.dirty = true;
-  }
-  function endPull(rest){
-    const c = S.cur; if (!c) return;
-    if (rest){ const r = rest.split(','); c.kill = r[5] === '1'; c.dur = (+r[6]) / 1000 || c.lastT; }
-    else c.dur = c.lastT;
-    c.ended = true; S.cur = null; S.dirty = true;
-  }
-  function addPt(arr, t, x, y){ const L = arr.length; if (L && t - arr[L - 1][0] < 0.1) return; arr.push([t, x, y]); }
-  function credit(c, r, val){
-    if (!(val > 0)) return;
-    const df = parseInt(r[7], 16); if (df & 0x10) return;            // only damage to non-friendly units
-    const src = r[1]; let owner = src.startsWith('Player-') ? src : S.pets[src];
-    if (!owner || !owner.startsWith('Player-')) return;
-    const d = c.dmg[owner] || (c.dmg[owner] = { all: 0, boss: 0 });
-    d.all += val; if (r[5].indexOf(CFG.bossNpc) > 0) d.boss += val;
-  }
-
-  function event(line, rest){
-    const c = S.cur, t = tsSec(line) - c.t0; c.lastT = t;
-    const ci = rest.indexOf(','), ev = rest.slice(0, ci);
-    if (ev === 'COMBATANT_INFO'){ const r = rest.split(',', 27); c.specGuid[r[1]] = +r[25]; return; }
-    if (ev === 'UNIT_DIED'){ const r = splitCSV(rest); if (r[5] && r[5].startsWith('Player-') && !(r[5] in c.died)) c.died[r[5]] = t; return; }
-    const swing = ev.startsWith('SWING_'), spell = ev.startsWith('SPELL_') || ev.startsWith('RANGE_');
-    if (!swing && !spell) return;
-    if (ev === 'SPELL_AURA_APPLIED' || ev === 'SPELL_AURA_REMOVED'){
-      if (rest.indexOf(CFG.virA) < 0 && rest.indexOf(CFG.virB) < 0) return;
-      const r = splitCSV(rest);
-      if ((r[9] === CFG.virA || r[9] === CFG.virB) && r[5].startsWith('Player-')){
-        c.aura.push([t, ev.slice(11), r[9], r[5]]); S.names[r[5]] = r[6].split('-')[0];
-      }
-      return;
-    }
-    if (ev.startsWith('SPELL_AURA') || ev === 'SPELL_ABSORBED' || ev === 'SWING_DAMAGE_LANDED' || ev === 'SPELL_CAST_START') return;
-    const r = splitCSV(rest);
-    if (r[1] && r[1].startsWith('Player-')) S.names[r[1]] = r[2].split('-')[0];
-    if (r[5] && r[5].startsWith('Player-')) S.names[r[5]] = r[6].split('-')[0];
-    if (!c.bossGuid){ if (r[1] && r[1].indexOf(CFG.bossNpc) > 0) c.bossGuid = r[1]; else if (r[5] && r[5].indexOf(CFG.bossNpc) > 0) c.bossGuid = r[5]; }
-    if (ev === 'SPELL_SUMMON'){ if (r[1].startsWith('Player-')) S.pets[r[5]] = r[1]; else if (S.pets[r[1]]) S.pets[r[5]] = S.pets[r[1]]; return; }
-    const k = swing ? 9 : 12;
-    let x = NaN, y = NaN;
-    if (r.length > k + 17 && r[k].indexOf('-') > 0){
-      x = +r[k + 14]; y = +r[k + 15];
-      const info = r[k], own = r[k + 1];
-      if (own && own !== '0000000000000000' && own.startsWith('Player-') && !info.startsWith('Player-')) S.pets[info] = own;
-      if (isFinite(x) && isFinite(y)){
-        if (info.startsWith('Player-')) addPt(c.track[info] || (c.track[info] = []), t, x, y);
-        else if (info === c.bossGuid){ addPt(c.boss, t, x, y); const hp = +r[k + 2], mx = +r[k + 3]; if (mx > 0) c.bossHp = [hp, mx]; }
-      }
-    }
-    if (ev === 'SPELL_DAMAGE' || ev === 'SPELL_PERIODIC_DAMAGE' || ev === 'RANGE_DAMAGE' || ev === 'SWING_DAMAGE'){
-      if (ev === 'SPELL_DAMAGE' && r[9] === CFG.boom && r[5].startsWith('Player-') && isFinite(x)) c.boom.push([t, r[5], x, y]);
-      const amt = +r[k + 19], over = +r[k + 21], abs = +r[k + 25];
-      credit(c, r, amt - (over > 0 ? over : 0) + (abs > 0 ? abs : 0));
-      S.dirty = true;
-    } else if (ev.endsWith('_MISSED')){
-      const m = swing ? 9 : 12;
-      if (r[m] === 'ABSORB'){ credit(c, r, +r[m + 2]); S.dirty = true; }
-    }
-  }
-
-  function line(l){
-    if (l.charCodeAt(l.length - 1) === 13) l = l.slice(0, -1);
-    const sep = l.indexOf('  '); if (sep < 0) return;
-    const rest = l.slice(sep + 2);
-    if (!S.cur){ if (rest.startsWith(MARK)) startPull(l, rest); return; }
-    if (rest.startsWith('ENCOUNTER_END,')){ endPull(rest); return; }
-    if (rest.startsWith('ENCOUNTER_START,')){ endPull(null); if (rest.startsWith(MARK)) startPull(l, rest); return; }
-    event(l, rest);
-  }
-
-  // Feed decoded text. Incomplete last line is kept for the next call.
-  function feed(text){
-    text = S.leftover + text;
-    const end = text.lastIndexOf('\n');
-    if (end < 0){ S.leftover = text; return; }
-    let pos = 0;
-    while (pos < end){
-      if (!S.cur){
-        const m = text.indexOf(MARK, pos);
-        if (m < 0 || m >= end){ pos = end; break; }
-        pos = text.lastIndexOf('\n', m) + 1;
-      }
-      let nl = text.indexOf('\n', pos); if (nl < 0 || nl > end) nl = end;
-      line(text.slice(pos, nl));
-      pos = nl + 1;
-    }
-    S.leftover = text.slice(end + 1);
-  }
-
-  // ---- turn parsed pulls into the page's DATA shape ----
-  function posAt(tr, t){
-    if (!tr || !tr.length) return null;
-    let lo = 0, hi = tr.length;
-    while (lo < hi){ const mid = (lo + hi) >> 1; if (tr[mid][0] < t) lo = mid + 1; else hi = mid; }
-    const a = tr[lo - 1], b = tr[lo];
-    if (a && b && b[0] - a[0] < 1.6 && b[0] !== a[0]){ const f = (t - a[0]) / (b[0] - a[0]); return [+(a[1] + (b[1] - a[1]) * f).toFixed(2), +(a[2] + (b[2] - a[2]) * f).toFixed(2)]; }
-    const best = [a, b].filter(Boolean).sort((p, q) => Math.abs(p[0] - t) - Math.abs(q[0] - t))[0];
-    return best && Math.abs(best[0] - t) <= 1.0 ? [+best[1].toFixed(2), +best[2].toFixed(2)] : null;
-  }
-  const nm = g => S.names[g] || g;
-  function build(){
-    Object.values(S.pulls).forEach(p => Object.entries(p.specGuid).forEach(([g, sp]) => { if (S.names[g]) S.specs[S.names[g]] = sp; }));
-    const pulls = S.pulls.map(p => {
-      const casts = [];
-      p.aura.slice().sort((a, b) => a[0] - b[0]).forEach(([t, ev, sid, g]) => {
-        if (ev !== 'APPLIED') return;
-        if (!casts.length || t - casts[casts.length - 1].t > 10) casts.push({ t, assign: {}, extra: [] });
-        const c = casts[casts.length - 1];
-        if (t - c.t <= 1.5){ if (!(g in c.assign)) c.assign[g] = sid === CFG.virA ? 'A' : 'B'; }
-        else c.extra.push([+(t - c.t).toFixed(2), nm(g), sid === CFG.virA ? 'A' : 'B']);
-      });
-      const out = casts.map(c => {
-        const players = {};
-        Object.entries(c.assign).forEach(([g, type]) => {
-          const tr = p.track[g]; if (!tr) return;
-          const dt = p.died[g], s = [];
-          for (let k = 0; k < 27; k++){ const t = c.t + k * 0.25; s.push((dt != null && t > dt + 0.05) || t > p.lastT + 0.05 ? null : posAt(tr, t)); }
-          players[nm(g)] = { type, s };
-        });
-        return { t: +c.t.toFixed(2), boss: posAt(p.boss, c.t + 5), players, extra: c.extra,
-          booms: p.boom.filter(b => b[0] - c.t >= 0 && b[0] - c.t <= 10).map(b => [+(b[0] - c.t).toFixed(2), nm(b[1]), +b[2].toFixed(2), +b[3].toFixed(2)]),
-          deaths: Object.entries(p.died).filter(([g, t]) => t - c.t >= 0 && t - c.t <= 10).map(([g, t]) => [+(t - c.t).toFixed(2), nm(g)]) };
-      });
-      const dmg = {}; Object.entries(p.dmg).forEach(([g, d]) => { dmg[nm(g)] = { all: d.all, boss: d.boss }; });
-      return { n: p.n, clock: p.clock, date: p.date, diff: p.diff, dur: +(p.ended ? p.dur : p.lastT).toFixed(1), kill: p.kill, live: !p.ended,
-        hp: p.bossHp ? p.bossHp[0] / p.bossHp[1] : null, casts: out, dmg };
-    });
-    return { step: 0.25, pulls, specs: Object.assign({}, S.specs) };
-  }
-
-  return { configure, reset, feed, build, state: S, cfg: CFG };
-})();
-
-// ---- live mode: follow the newest combat log and rebuild the page as pulls happen ----
+// ---- uploaded data: data.json is pushed by the uploader script after every Sszorak pull ----
 const SNAPSHOT = DATA;
 const DIFF = {14:'Normal', 15:'Heroic', 16:'Mythic', 17:'LFR'};
-const LIVE = { dir:null, handle:null, file:null, name:null, offset:0, decoder:new TextDecoder(), timer:null, busy:false, lastRead:0, err:null, once:false, data:null, saved:null, progress:null };
+const SITE = { data:null, updated:null, lastCheck:0, missing:false, err:null };
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
 const fmt = v => v>=1e9 ? (v/1e9).toFixed(2)+'B' : v>=1e6 ? (v/1e6).toFixed(2)+'M' : v>=1e3 ? (v/1e3).toFixed(1)+'K' : Math.round(v).toString();
-function liveReset(name){ LP.reset(); LIVE.name = name; LIVE.offset = 0; LIVE.decoder = new TextDecoder(); LIVE.data = null; }
-async function newestLog(dir){
-  let best = null, bt = -1;
-  for await (const [name, h] of dir.entries()){
-    if (h.kind !== 'file' || !/^WoWCombatLog.*\.txt$/i.test(name)) continue;
-    const f = await h.getFile(); if (f.lastModified > bt){ bt = f.lastModified; best = h; }
-  }
-  return best;
-}
-async function liveRead(){
-  if (LIVE.busy) return; LIVE.busy = true;
-  try {
-    if (LIVE.dir){
-      const h = await newestLog(LIVE.dir);
-      if (!h){ LIVE.err = 'No WoWCombatLog file in that folder yet. Turn on combat logging in game and it will appear here.'; return; }
-      if (h.name !== LIVE.name){ liveReset(h.name); LIVE.handle = h; }
-    }
-    const file = LIVE.file || await LIVE.handle.getFile();
-    if (file.size < LIVE.offset) liveReset(file.name);
-    const CH = 8 << 20, total = file.size;
-    while (LIVE.offset < total){
-      const end = Math.min(total, LIVE.offset + CH);
-      LP.feed(LIVE.decoder.decode(await file.slice(LIVE.offset, end).arrayBuffer(), {stream:true}));
-      LIVE.offset = end;
-      if (total > CH * 2){ LIVE.progress = Math.round(LIVE.offset / total * 100); setLiveStatus(); }
-      await new Promise(r => setTimeout(r, 0));
-    }
-    LIVE.progress = null; LIVE.err = null; LIVE.lastRead = Date.now();
-    if (LP.state.dirty || !LIVE.data){ LP.state.dirty = false; applyLive(); }
-  } catch (e) {
-    LIVE.err = e.name === 'NotAllowedError' ? 'Permission to read the log was lost. Click Reconnect.' : 'Could not read the log: ' + e.message;
-  } finally { LIVE.busy = false; setLiveStatus(); }
-}
-function applyLive(){
-  const D = LP.build();
-  Object.assign(SPEC_OF, D.specs);
-  D.pulls = D.pulls.filter(p => p.live || p.dur >= 2);
-  D.pulls.forEach((p, i) => p.n = i + 1);
-  LIVE.data = D;
-  if (D.pulls.length){
+function applyData(D){
+  Object.assign(SPEC_OF, D.specs || {});
+  SITE.data = D;
+  if (D.pulls && D.pulls.length){
     DATA = D; buildCasts();
     if (st.preset) st.on = presetSet(st.preset);
     else st.on = new Set([...st.on].filter(id => CASTS.some(c => c.id === id)));
@@ -794,60 +587,41 @@ function applyLive(){
   }
   renderMeter(); setHeader();
 }
+async function checkSite(){
+  try {
+    const r = await fetch('data.json?t=' + Date.now(), {cache:'no-store'});
+    SITE.lastCheck = Date.now();
+    if (!r.ok){ SITE.missing = true; SITE.err = r.status === 404 ? null : `Could not load tonight's data (HTTP ${r.status}).`; return; }
+    const D = await r.json(); SITE.missing = false; SITE.err = null;
+    if (D.updated !== SITE.updated){ SITE.updated = D.updated; applyData(D); }
+  } catch (e) { SITE.missing = true; }
+  finally { setLiveStatus(); }
+}
 function prettyDate(d){ const [m, dd, y] = d.split('/'); return new Date(Date.UTC(+y, +m - 1, +dd)).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric', timeZone:'UTC'}); }
 function setHeader(){
-  const D = LIVE.data;
-  if (D && D.pulls.length){ const p = D.pulls[D.pulls.length - 1]; $('sub').textContent = `${DIFF[p.diff] || 'Difficulty ' + p.diff} · ${prettyDate(p.date)} · live from ${LIVE.name}`; }
+  const D = SITE.data;
+  if (D && D.pulls && D.pulls.length){ const p = D.pulls[D.pulls.length - 1]; $('sub').textContent = `${DIFF[p.diff] || 'Difficulty ' + p.diff} · ${prettyDate(p.date)} · uploaded from the combat log`; }
   else $('sub').textContent = 'Mythic · Oct 15, 2026 · saved snapshot';
 }
-function ago(ms){ const s = Math.round((Date.now() - ms) / 1000); return s < 2 ? 'just now' : s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`; }
+function ago(ms){ const s = Math.round((Date.now() - ms) / 1000); return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; }
+function pullLabel(p){ const m = Math.floor(p.dur / 60), s = String(Math.floor(p.dur % 60)).padStart(2, '0'); const res = p.live ? 'in progress' : p.kill ? 'kill' : p.hp != null ? `wipe at ${(p.hp * 100).toFixed(1)}%` : 'wipe'; return `Pull ${p.n} · ${p.clock} · ${m}:${s} · ${res}`; }
 function setLiveStatus(){
-  const dot = $('liveDot'), t = $('liveText'), D = LIVE.data;
-  dot.className = 'ldot' + (LIVE.err ? ' err' : (LIVE.timer ? ' on' : ''));
-  if (LIVE.err){ t.textContent = LIVE.err; return; }
-  if (LIVE.progress != null){ t.textContent = `Reading ${LIVE.name}… ${LIVE.progress}%`; return; }
-  if (!LIVE.name){ t.textContent = LIVE.dir ? 'Looking for your combat log…' : 'Showing the Oct 15 snapshot. Connect your WoW Logs folder to follow tonight’s Sszorak pulls live.'; return; }
-  const n = D ? D.pulls.length : 0;
-  const what = n ? `${n} Sszorak pull${n === 1 ? '' : 's'}` + (D.pulls[n - 1].live ? ' · pull in progress' : '') : 'waiting for the first Sszorak pull (showing Oct 15 until then)';
-  t.textContent = LIVE.once ? `Loaded ${LIVE.name} once · ${what}. Live updates need Chrome or Edge with this page opened directly.` : `Live · ${LIVE.name} · ${what} · checked ${ago(LIVE.lastRead)}`;
+  const dot = $('liveDot'), t = $('liveText'), D = SITE.data;
+  dot.className = 'ldot' + (SITE.err ? ' err' : (D && D.pulls && D.pulls.length ? ' on' : ''));
+  if (SITE.err){ t.textContent = SITE.err; return; }
+  if (!D || !D.pulls || !D.pulls.length){ t.textContent = 'Showing the Oct 15 snapshot. Tonight’s Sszorak pulls appear here automatically once the uploader sends them; this page checks every 30 seconds.'; return; }
+  const n = D.pulls.length, last = D.pulls[n - 1];
+  t.textContent = `Tonight · ${n} Sszorak pull${n === 1 ? '' : 's'} · latest: ${pullLabel(last)} · uploaded ${ago(Date.parse(D.updated))} · checks every 30 s`;
 }
-function stopLive(){ clearInterval(LIVE.timer); LIVE.timer = null; }
-function startDir(d){ stopLive(); LIVE.dir = d; LIVE.handle = null; LIVE.file = null; LIVE.once = false; LIVE.name = null; LIVE.err = null; $('btnReconnect').hidden = true; LIVE.timer = setInterval(liveRead, 3000); liveRead(); }
-function startFile(h){ stopLive(); LIVE.dir = null; LIVE.handle = h; LIVE.file = null; LIVE.once = false; LIVE.err = null; liveReset(h.name); $('btnReconnect').hidden = true; LIVE.timer = setInterval(liveRead, 3000); liveRead(); }
-function idb(){ return new Promise((res, rej) => { const r = indexedDB.open('vir-live', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
-async function idbGet(k){ const db = await idb(); return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
-async function idbSet(k, v){ try { const db = await idb(); db.transaction('kv', 'readwrite').objectStore('kv').put(v, k); } catch (e) {} }
-function pickerFailed(e){ if (e.name === 'AbortError') return; if (e.name === 'SecurityError' || e.name === 'NotAllowedError' || e.name === 'TypeError'){ $('fileIn').click(); return; } LIVE.err = 'Could not open that: ' + e.message; setLiveStatus(); }
-$('btnFolder').onclick = async () => {
-  if (!window.showDirectoryPicker){ $('fileIn').click(); return; }
-  try { const d = await window.showDirectoryPicker({id:'wowlogs', mode:'read'}); idbSet('src', {kind:'dir', h:d}); startDir(d); } catch (e) { pickerFailed(e); }
-};
-$('btnFile').onclick = async () => {
-  if (!window.showOpenFilePicker){ $('fileIn').click(); return; }
-  try { const [h] = await window.showOpenFilePicker({id:'wowlog', types:[{description:'Combat log', accept:{'text/plain':['.txt']}}]}); idbSet('src', {kind:'file', h}); startFile(h); } catch (e) { pickerFailed(e); }
-};
-$('fileIn').onchange = e => { const f = e.target.files[0]; if (!f) return; stopLive(); LIVE.dir = null; LIVE.handle = null; liveReset(f.name); LIVE.file = f; LIVE.once = true; LIVE.err = null; liveRead(); e.target.value = ''; };
-$('btnReconnect').onclick = async () => {
-  const s = LIVE.saved; if (!s) return;
-  try { if (await s.h.requestPermission({mode:'read'}) === 'granted') s.kind === 'dir' ? startDir(s.h) : startFile(s.h); } catch (e) { LIVE.err = 'Could not reconnect: ' + e.message; setLiveStatus(); }
-};
-(async () => {
-  try {
-    const s = await idbGet('src'); if (!s || !s.h || !s.h.queryPermission) return;
-    LIVE.saved = s;
-    if (await s.h.queryPermission({mode:'read'}) === 'granted') s.kind === 'dir' ? startDir(s.h) : startFile(s.h);
-    else { $('btnReconnect').hidden = false; $('btnReconnect').textContent = `Reconnect to ${s.h.name}`; }
-  } catch (e) {}
-})();
-setInterval(() => { if (LIVE.timer && !LIVE.busy) setLiveStatus(); }, 1000);
+setInterval(checkSite, 30000);
+setInterval(setLiveStatus, 15000);
 
 // ---- damage meter ----
-function pullLabel(p){ const m = Math.floor(p.dur / 60), s = String(Math.floor(p.dur % 60)).padStart(2, '0'); const res = p.live ? 'in progress' : p.kill ? 'kill' : p.hp != null ? `wipe at ${(p.hp * 100).toFixed(1)}%` : 'wipe'; return `Pull ${p.n} · ${p.clock} · ${m}:${s} · ${res}`; }
 function renderMeter(){
-  const D = LIVE.data, box = $('meter'), sel = $('dmgPull');
+  const D = SITE.data, box = $('meter'), sel = $('dmgPull');
   if (!D || !D.pulls.length){
     sel.innerHTML = ''; sel.disabled = true; $('meterSum').textContent = '';
-    box.innerHTML = `<p class="empty">${D ? 'No Sszorak pulls in this log yet. Damage shows up here as soon as one starts.' : 'Connect your Logs folder above to see damage for tonight’s Sszorak pulls. The Oct 15 snapshot has no damage data.'}</p>`;
+    box.innerHTML = `<p class="empty">${D ? 'No Sszorak pulls uploaded yet tonight. Damage shows up here after the first one.' : 'Damage for tonight’s Sszorak pulls shows up here once the uploader sends them. The Oct 15 snapshot has no damage data.'}</p>`;
     return;
   }
   sel.disabled = false;
@@ -867,7 +641,7 @@ $('dmgPull').onchange = e => { st.dmgPull = e.target.value; renderMeter(); };
 $('tAll').onclick = () => { st.dmgTarget = 'all'; $('tAll').setAttribute('aria-pressed', 'true'); $('tBoss').setAttribute('aria-pressed', 'false'); renderMeter(); };
 $('tBoss').onclick = () => { st.dmgTarget = 'boss'; $('tBoss').setAttribute('aria-pressed', 'true'); $('tAll').setAttribute('aria-pressed', 'false'); renderMeter(); };
 
-stats(); boomList(); render(); renderMeter(); setLiveStatus();
+stats(); boomList(); render(); renderMeter(); setLiveStatus(); checkSite();
 </script>
 
 </body>

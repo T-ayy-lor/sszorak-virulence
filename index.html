@@ -252,11 +252,14 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
     <p class="note">Damage counts each hit plus any amount absorbed by shields, minus overkill, against enemies only. Pet and guardian damage goes to its owner. DPS divides by the pull's length.</p>
   </div>
   <div class="panel" id="tempestPanel">
-    <h2>Hit by Tempest</h2>
+    <div class="meterhead">
+      <h2 style="margin:0">Hit by Tempest</h2>
+      <select id="tmpPull" aria-label="Pulls to count Tempest hits for"></select>
+    </div>
     <p class="note" id="tempestSum"></p>
     <div class="mrow trow mhdr"><span>#</span><span>Player</span><span></span><span>Hits</span><span>Taken</span></div>
     <div id="tempest"></div>
-    <p class="note">Hits counts each time Tempest landed on the player (each hit also adds a stack of its damage-over-time). Taken is all Tempest damage, hits plus ticks, including what shields absorbed. Follows the pull picked in Damage done.</p>
+    <p class="note">Hits counts each time Tempest landed on the player (each hit also adds a stack of its damage-over-time). Taken is all Tempest damage, hits plus ticks, including what shields absorbed.</p>
   </div>
   </div>
 
@@ -331,7 +334,7 @@ function isDark(){ const t=document.documentElement.dataset.theme; if(t) return 
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 // ---- state
-const st = {k:20, R:8, frame:'room', healers:false, view:'all', assign:true, rot:0, mir:false, sel:null, on:new Set(CASTS.filter(c=>c.idx===1).map(c=>c.id)), preset:'first', sort:'drift', asc:true, dmgPull:'latest', dmgTarget:'all'};
+const st = {k:20, R:8, frame:'room', healers:false, view:'all', assign:true, rot:0, mir:false, sel:null, on:new Set(CASTS.filter(c=>c.idx===1).map(c=>c.id)), preset:'first', sort:'drift', asc:true, dmgPull:'latest', dmgTarget:'all', tmpPull:'all'};
 try { const s = JSON.parse(localStorage.getItem('vir-ui')||'{}'); if (s.rot!=null) st.rot=s.rot; if (s.mir!=null) st.mir=s.mir; if (s.R) st.R=s.R; } catch(e){}
 function save(){ try{ localStorage.setItem('vir-ui', JSON.stringify({rot:st.rot,mir:st.mir,R:st.R})); }catch(e){} }
 
@@ -678,7 +681,7 @@ function renderMeter(){
   if (!D || !D.pulls.length){
     sel.innerHTML = ''; sel.disabled = true; $('meterSum').textContent = '';
     box.innerHTML = `<p class="empty">${D ? 'No Sszorak pulls uploaded yet tonight. Damage shows up here after the first one.' : 'Damage for tonight’s Sszorak pulls shows up here once the uploader sends them. The Oct 15 snapshot has no damage data.'}</p>`;
-    renderTempest(null);
+    renderTempest();
     return;
   }
   sel.disabled = false;
@@ -693,11 +696,17 @@ function renderMeter(){
   const max = rows.length ? rows[0][1] : 1, sum = rows.reduce((s, r) => s + r[1], 0);
   box.innerHTML = rows.map(([n, v], i) => `<div class="mrow"><span class="mrank">${i + 1}</span><span class="mname" style="--cc:${classHex(n)}"><span class="pn">${esc(n)}</span></span><span class="mbar"><i style="width:${(v / max * 100).toFixed(1)}%;background:${classHex(n)}"></i></span><span class="mval">${fmt(v)}</span><span class="mdps">${dur > 0 ? fmt(v / dur) : '–'}</span><span class="mpct">${(v / sum * 100).toFixed(1)}%</span></div>`).join('') || '<p class="empty">No damage recorded yet.</p>';
   $('meterSum').textContent = `${list.length === 1 ? pullLabel(list[0]) : `${list.length} pulls, ${Math.round(dur / 60)} min total`} · raid ${fmt(dur > 0 ? sum / dur : 0)} DPS · ${fmt(sum)} damage`;
-  renderTempest(list);
+  renderTempest();
 }
-function renderTempest(list){
-  const box = $('tempest');
-  if (!list || !list.length || !list.some(p => p.tempest)){
+function renderTempest(){
+  const box = $('tempest'), sel = $('tmpPull'), pulls = (SITE.data && SITE.data.pulls) || [];
+  if (pulls.length){
+    const opts = [['all', `Overall · all ${pulls.length} pulls`], ['latest', 'Latest pull (follows new pulls)'], ...pulls.slice().reverse().map(p => [String(p.n), pullLabel(p)])];
+    if (!opts.some(o => o[0] === st.tmpPull)) st.tmpPull = 'all';
+    sel.innerHTML = opts.map(([v, t]) => `<option value="${v}"${v === st.tmpPull ? ' selected' : ''}>${esc(t)}</option>`).join(''); sel.disabled = false;
+  } else { sel.innerHTML = ''; sel.disabled = true; }
+  const list = st.tmpPull === 'all' ? pulls : st.tmpPull === 'latest' ? pulls.slice(-1) : pulls.filter(p => String(p.n) === st.tmpPull);
+  if (!list.length || !list.some(p => p.tempest)){
     $('tempestSum').textContent = '';
     box.innerHTML = `<p class="empty">${SITE.data && SITE.data.pulls && SITE.data.pulls.length ? 'No Tempest data in these pulls.' : 'Tempest hits for tonight\u2019s pulls show up here once the uploader sends them. The Oct 15 snapshot has no Tempest data.'}</p>`;
     return;
@@ -710,6 +719,7 @@ function renderTempest(list){
   $('tempestSum').textContent = `${list.length === 1 ? 'Pull ' + list[0].n : list.length + ' pulls'} · ${casts} Tempest cast${casts === 1 ? '' : 's'} · ${hits} hits`;
 }
 $('dmgPull').onchange = e => { st.dmgPull = e.target.value; renderMeter(); };
+$('tmpPull').onchange = e => { st.tmpPull = e.target.value; renderTempest(); };
 $('tAll').onclick = () => { st.dmgTarget = 'all'; $('tAll').setAttribute('aria-pressed', 'true'); $('tBoss').setAttribute('aria-pressed', 'false'); renderMeter(); };
 $('tBoss').onclick = () => { st.dmgTarget = 'boss'; $('tBoss').setAttribute('aria-pressed', 'true'); $('tAll').setAttribute('aria-pressed', 'false'); renderMeter(); };
 

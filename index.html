@@ -29,6 +29,7 @@
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
 .wrap{max-width:1640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px;display:flex;flex-direction:column;gap:18px}
 header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px}
+#themeSeg{margin-left:auto;align-self:center}
 h1{font-family:var(--f-display);font-weight:700;font-size:1.9rem;letter-spacing:.01em;margin:0;text-wrap:balance}
 .sub{color:var(--muted);font-size:.95rem}
 .stats{display:flex;flex-wrap:wrap;gap:8px 22px;font-family:var(--f-mono);font-size:.82rem;color:var(--muted)}
@@ -125,6 +126,10 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
   <header>
     <h1>Sszorak · Virulence Spread</h1>
     <span class="sub" id="sub">Mythic · Oct 15, 2026 · saved snapshot</span>
+    <div class="seg" id="themeSeg" role="group" aria-label="Color theme">
+      <button type="button" id="thLight" aria-pressed="true">Light</button>
+      <button type="button" id="thDark" aria-pressed="false">Dark</button>
+    </div>
   </header>
   <div class="stats" id="stats"></div>
   <div class="livebar" id="livebar">
@@ -567,6 +572,16 @@ cv.addEventListener('click', ev=>{ const {best}=nearest(ev); pick(best?best.n:st
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
 let rzT; new ResizeObserver(()=>{ clearTimeout(rzT); rzT=setTimeout(render,60); }).observe(cv);
 new MutationObserver(render).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+// ---- light / dark toggle (remembered per browser; follows the system setting until you pick one)
+function setTheme(t, remember){
+  document.documentElement.dataset.theme = t;
+  $('thLight').setAttribute('aria-pressed', String(t === 'light')); $('thDark').setAttribute('aria-pressed', String(t === 'dark'));
+  if (remember){ try { localStorage.setItem('vir-theme', t); } catch (e) {} }
+}
+(() => { let saved = null; try { saved = localStorage.getItem('vir-theme'); } catch (e) {}
+  setTheme(saved || (isDark() ? 'dark' : 'light'), false); })();
+$('thLight').onclick = () => setTheme('light', true);
+$('thDark').onclick = () => setTheme('dark', true);
 document.fonts && document.fonts.ready.then(render);
 
 // ---- uploaded data: data.json is pushed by the uploader script after every Sszorak pull ----

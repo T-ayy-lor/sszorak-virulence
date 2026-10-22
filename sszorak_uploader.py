@@ -4,12 +4,6 @@ Sszorak uploader: watches your WoW combat log and, after every Sszorak pull or w
 pushes the night's data (positions, Virulence casts, explosions, damage, Tempest) to
 nights/<log name>.json in your GitHub Pages repository, and lists the night in nights.json.
 The site picks it up on its own.
-
-Run it in Terminal before raid and leave the window open:
-    python3 ~/githubpages/sszorak_uploader.py
-
-The first run asks for a GitHub token and saves it to ~/.sszorak_uploader_token
-(readable only by you). Press Control-C to stop.
 """
 import base64, codecs, csv, getpass, glob, json, os, ssl, sys, time, urllib.error, urllib.request
 from datetime import datetime, timezone

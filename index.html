@@ -222,7 +222,7 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
           <dt>Assigned</dt><dd>Shows each player's spot from the raid plan as a numbered ring in their class color.</dd>
           <dt>Players</dt><dd>Hide healers removes Roychi, Shènròn, Snakespeare and Zynzii from the map and the table, since healers stand outside the stack.</dd>
           <dt>Boss %</dt><dd>The boss's health when each pull ended (nights without health data show pull length instead). Click a pull to show only its casts.</dd>
-          <dt>Casts</dt><dd>Which Virulence casts are included. 1st Virulence picks every odd cast (1st, 3rd…) and 2nd Virulence every even cast (2nd, 4th…), since those happen on the same side of the room. Each button below is one cast, labeled pull · cast number; filled means included.</dd>
+          <dt>Casts</dt><dd>Which Virulence casts are included. 1st Virulence picks every odd cast (1st, 3rd…) and 2nd Virulence every even cast (2nd, 4th…), since those happen on the same side of the room. A cast where the raid stood on the other side goes with that side. Each button below is one cast, labeled pull · cast number; filled means included.</dd>
         </dl>
       </div>
 
@@ -241,7 +241,7 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
         <p class="note">Click a player to highlight their dots across every selected cast, with their average spot and movement trail. Every column uses only the casts selected above, measured at the Moment slider's time.</p>
         <dl class="defs">
           <dt>Casts</dt><dd>Number of selected Virulence casts where this player had the debuff and a recorded position at the chosen moment.</dd>
-          <dt>Drift</dt><dd>How consistently they stand in the same place. Their usual spot is the average of their room positions, worked out separately for each side of the room, since the raid alternates sides each Virulence: 1st and 3rd on one side, 2nd and 4th on the other. Drift is the median distance in yards from that usual spot. Low = same spot every pull. Shows – when the player has fewer than 2 selected casts on the same side.</dd>
+          <dt>Drift</dt><dd>How consistently they stand in the same place. Their usual spot is the average of their room positions, worked out separately for each side of the room, since the raid alternates sides each Virulence: 1st and 3rd on one side, 2nd and 4th on the other. A cast where the raid stood on the other side counts with that side. Drift is the median distance in yards from that usual spot. Low = same spot every pull. Shows – when the player has fewer than 2 selected casts on the same side.</dd>
         </dl>
       </div>
     </div>
@@ -295,7 +295,7 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
       <h2>How this was measured</h2>
       <p class="note">Each night's data comes from an uploader script that reads the combat log and sends the Sszorak pulls after every pull or wipe. Pick a night at the top, or All nights to combine them. This page checks for new data every 30 seconds, and GitHub takes a minute or two to publish each upload.</p>
       <p class="note">Each player's position comes from the X/Y coordinates Advanced Combat Logging writes on every event involving them, sampled every 0.25 s for 6.5 s after Virulence lands. Virulence goes off 5 s after it lands, so the default moment (5.00 s) shows where everyone stood when it went off.</p>
-      <p class="note">Positions are drawn in room coordinates. Faded dark dots mark where Sszorak stood 5 s into each selected cast; the raid alternates sides each Virulence (1st and 3rd on one side, 2nd and 4th on the other), so averages, drift and rings are worked out per side.</p>
+      <p class="note">Positions are drawn in room coordinates. Faded dark dots mark where Sszorak stood 5 s into each selected cast; the raid alternates sides each Virulence (1st and 3rd on one side, 2nd and 4th on the other), so averages, drift and rings are worked out per side. Each cast is placed by where the raid stood when it went off, so a cast where the raid didn't move (Oct 21 pull 16's 3rd) counts with the side it actually happened on.</p>
       <p class="note">The room image is from raidstrats.gg. The log has no coordinates for that image, so it was lined up by hand: Sszorak's spawn point (the same spot every pull) sits at the platform center, the data is turned 59° counter-clockwise from north-up so Sszorak's tank spot points at the platform edge he is pulled to, and the scale was set so the area the raid stood in meets the platform's rim. Treat wall positions as close, not exact.</p>
       <p class="note">Assigned spots come from the raid plan image, matched onto the same floor image so each ring sits where the plan draws it. For the 2nd Virulence the same layout is turned 180° around the room center, because Sszorak is pulled to the opposite side of the platform. Healers have no spot in the plan, so they have no ring.</p>
       <p class="note">Neineimuu moved to spot 19 from pull 9 on Oct 21 (21:39), so his drift only counts positions from then on.</p>
@@ -318,8 +318,16 @@ const dkey = (d, clock) => { const [m, dd, y] = d.split('/'); return `${y}${m.pa
 Object.values(RESETS).forEach(r => r.key = dkey(r.date, r.clock));
 const pullKey = p => dkey(p.date || '10/15/2026', p.clock);
 let CASTS = [], NAMES = [];
-// the raid alternates sides each Virulence: odd casts (1st, 3rd…) on the 1st side, even casts (2nd, 4th…) on the 2nd
-const sideOf = (c, i) => i % 2 ? 1 : 2;
+// the raid alternates sides each Virulence: odd casts (1st, 3rd…) on the 1st side, even casts (2nd, 4th…) on the 2nd.
+// Each cast goes to the side the raid actually stood on when it went off (5 s), so a cast where the raid stayed put
+// (Oct 21 pull 16's 3rd) lands with the right side; with no positions it falls back to odd/even.
+function sideOf(c, i){
+  const pts = Object.values(c.players).map(v => v.s[20]).filter(Boolean);
+  if (!pts.length) return i % 2 ? 1 : 2;
+  const x = pts.reduce((a, q) => a + q[0], 0) / pts.length, y = pts.reduce((a, q) => a + q[1], 0) / pts.length;
+  const b1 = ASSIGN.pos[1].__boss, b2 = ASSIGN.pos[2].__boss;
+  return Math.hypot(x - b1[0], y - b1[1]) <= Math.hypot(x - b2[0], y - b2[1]) ? 1 : 2;
+}
 function buildCasts(){
   CASTS = [];
   DATA.pulls.forEach(p => {

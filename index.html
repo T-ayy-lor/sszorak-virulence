@@ -121,6 +121,11 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
 .empty{color:var(--muted);font-size:.9rem;padding:10px 0}
 @media (max-width:640px){.mrow{grid-template-columns:20px minmax(70px,110px) minmax(0,1fr) 64px}.mrow .mval,.mrow .mpct,.mhdr span:nth-child(4),.mhdr span:nth-child(6){display:none}}
 @media (prefers-reduced-motion:reduce){.ldot.on{animation:none}}
+.meters{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:20px;align-items:start}
+@media (max-width:1000px){.meters{grid-template-columns:minmax(0,1fr)}}
+.trow{grid-template-columns:22px minmax(80px,140px) minmax(0,1fr) 44px 70px}
+.mhdr.trow span:nth-child(n+4){text-align:right}
+@media (max-width:640px){.mrow.trow{grid-template-columns:20px minmax(70px,110px) minmax(0,1fr) 40px 64px}.mrow.trow .mval{display:inline}.mhdr.trow span:nth-child(4){display:inline}}
 .lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px}
 @media (max-width:900px){.lower{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -232,6 +237,7 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
     </div>
   </div>
 
+  <div class="meters">
   <div class="panel" id="meterPanel">
     <div class="meterhead">
       <h2 style="margin:0">Damage done</h2>
@@ -244,6 +250,14 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
     <div class="mrow mhdr"><span>#</span><span>Player</span><span></span><span>Damage</span><span>DPS</span><span>Share</span></div>
     <div id="meter"></div>
     <p class="note">Damage counts each hit plus any amount absorbed by shields, minus overkill, against enemies only. Pet and guardian damage goes to its owner. DPS divides by the pull's length.</p>
+  </div>
+  <div class="panel" id="tempestPanel">
+    <h2>Hit by Tempest</h2>
+    <p class="note" id="tempestSum"></p>
+    <div class="mrow trow mhdr"><span>#</span><span>Player</span><span></span><span>Hits</span><span>Taken</span></div>
+    <div id="tempest"></div>
+    <p class="note">Hits counts each time Tempest landed on the player (each hit also adds a stack of its damage-over-time). Taken is all Tempest damage, hits plus ticks, including what shields absorbed. Follows the pull picked in Damage done.</p>
+  </div>
   </div>
 
   <div class="lower">
@@ -664,6 +678,7 @@ function renderMeter(){
   if (!D || !D.pulls.length){
     sel.innerHTML = ''; sel.disabled = true; $('meterSum').textContent = '';
     box.innerHTML = `<p class="empty">${D ? 'No Sszorak pulls uploaded yet tonight. Damage shows up here after the first one.' : 'Damage for tonight’s Sszorak pulls shows up here once the uploader sends them. The Oct 15 snapshot has no damage data.'}</p>`;
+    renderTempest(null);
     return;
   }
   sel.disabled = false;
@@ -678,6 +693,21 @@ function renderMeter(){
   const max = rows.length ? rows[0][1] : 1, sum = rows.reduce((s, r) => s + r[1], 0);
   box.innerHTML = rows.map(([n, v], i) => `<div class="mrow"><span class="mrank">${i + 1}</span><span class="mname" style="--cc:${classHex(n)}"><span class="pn">${esc(n)}</span></span><span class="mbar"><i style="width:${(v / max * 100).toFixed(1)}%;background:${classHex(n)}"></i></span><span class="mval">${fmt(v)}</span><span class="mdps">${dur > 0 ? fmt(v / dur) : '–'}</span><span class="mpct">${(v / sum * 100).toFixed(1)}%</span></div>`).join('') || '<p class="empty">No damage recorded yet.</p>';
   $('meterSum').textContent = `${list.length === 1 ? pullLabel(list[0]) : `${list.length} pulls, ${Math.round(dur / 60)} min total`} · raid ${fmt(dur > 0 ? sum / dur : 0)} DPS · ${fmt(sum)} damage`;
+  renderTempest(list);
+}
+function renderTempest(list){
+  const box = $('tempest');
+  if (!list || !list.length || !list.some(p => p.tempest)){
+    $('tempestSum').textContent = '';
+    box.innerHTML = `<p class="empty">${SITE.data && SITE.data.pulls && SITE.data.pulls.length ? 'No Tempest data in these pulls.' : 'Tempest hits for tonight\u2019s pulls show up here once the uploader sends them. The Oct 15 snapshot has no Tempest data.'}</p>`;
+    return;
+  }
+  const tot = {}; let casts = 0;
+  list.forEach(p => { casts += p.tempestCasts || 0; Object.entries(p.tempest || {}).forEach(([n, d]) => { const t = tot[n] || (tot[n] = {hits:0, dmg:0}); t.hits += d.hits; t.dmg += d.dmg; }); });
+  const rows = Object.entries(tot).filter(([n, d]) => d.hits > 0 || d.dmg > 0).sort((a, b) => b[1].hits - a[1].hits || b[1].dmg - a[1].dmg);
+  const max = rows.length ? Math.max(...rows.map(r => r[1].hits)) || 1 : 1, hits = rows.reduce((s, r) => s + r[1].hits, 0);
+  box.innerHTML = rows.map(([n, d], i) => `<div class="mrow trow"><span class="mrank">${i + 1}</span><span class="mname" style="--cc:${classHex(n)}"><span class="pn">${esc(n)}</span></span><span class="mbar"><i style="width:${(d.hits / max * 100).toFixed(1)}%;background:${classHex(n)}"></i></span><span class="mval">${d.hits}</span><span class="mdps">${fmt(d.dmg)}</span></div>`).join('') || '<p class="empty">Nobody was hit by Tempest.</p>';
+  $('tempestSum').textContent = `${list.length === 1 ? 'Pull ' + list[0].n : list.length + ' pulls'} · ${casts} Tempest cast${casts === 1 ? '' : 's'} · ${hits} hits`;
 }
 $('dmgPull').onchange = e => { st.dmgPull = e.target.value; renderMeter(); };
 $('tAll').onclick = () => { st.dmgTarget = 'all'; $('tAll').setAttribute('aria-pressed', 'true'); $('tBoss').setAttribute('aria-pressed', 'false'); renderMeter(); };

@@ -1,0 +1,24 @@
+{
+ "nights": [
+  {
+   "file": "nights/WoWCombatLog-101526_202041.json",
+   "log": "WoWCombatLog-101526_202041.txt",
+   "date": "10/15/2026",
+   "diff": 16,
+   "pulls": 22,
+   "kill": false,
+   "best": 0.6847339364521683,
+   "updated": "2026-10-22T23:37:25+00:00"
+  },
+  {
+   "file": "nights/WoWCombatLog-102126_201753.json",
+   "log": "WoWCombatLog-102126_201753.txt",
+   "date": "10/21/2026",
+   "diff": 16,
+   "pulls": 31,
+   "kill": false,
+   "best": 0.5284776529419619,
+   "updated": "2026-10-22T23:37:21+00:00"
+  }
+ ]
+}

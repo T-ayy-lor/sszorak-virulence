@@ -21,6 +21,7 @@ MIN_UPLOAD_GAP = 360        # seconds between uploads: GitHub Pages has a soft l
 ENC, BOSS_NPC = '3420', '-257347-'           # Sszorak encounter ID and creature ID
 VIR_A, VIR_B, BOOM = '1297707', '1299899', '1300089'
 TEMPEST, TEMPEST_CAST = '1287083', '1287072'   # Tempest hit/debuff and the boss's Tempest cast
+TELEPORT = '48020'                             # Demonic Circle: Teleport, counted per player per pull
 DMG_STEP = 5                                   # seconds per damage window in each pull's timeline
 FANGS_SPELL = '1308385'                        # Twin Fangs: the cast the raid has to kick
 FANGS_DIR, FANGS_INDEX = 'fangs', 'fangs.json'
@@ -56,7 +57,7 @@ class Parser:
         self.cur = dict(n=len(self.pulls) + 1, t0=self.ts(line), clock=clock, date=line.split(' ', 1)[0],
                         diff=int(r[3]), size=int(r[4]), ended=False, kill=False, dur=0.0, lastT=0.0,
                         track={}, specGuid={}, aura=[], boom=[], died={}, bossGuid=None, boss=[], bossHp=None, dmg={},
-                        tempest={}, tempestCasts=0, now=0.0)
+                        tempest={}, tempestCasts=0, now=0.0, ports={})
         self.pulls.append(self.cur)
 
     def end(self, rest):
@@ -136,6 +137,8 @@ class Parser:
             elif BOSS_NPC in r[5]: c['bossGuid'] = r[5]
         if ev == 'SPELL_CAST_SUCCESS' and r[9] == TEMPEST_CAST and BOSS_NPC in r[1]:
             c['tempestCasts'] += 1
+        if ev == 'SPELL_CAST_SUCCESS' and r[9] == TELEPORT and r[1].startswith('Player-'):
+            c['ports'][r[1]] = c['ports'].get(r[1], 0) + 1
         if ev == 'SPELL_SUMMON':
             if r[1].startswith('Player-'): self.pets[r[5]] = r[1]
             elif r[1] in self.pets: self.pets[r[5]] = self.pets[r[1]]
@@ -275,7 +278,8 @@ class Parser:
                           'dmg': {nm(g): {'all': round(d['all']), 'boss': round(d['boss']), 'b': [round(v) for v in d['b']]} for g, d in p['dmg'].items()},
                           'dmgStep': DMG_STEP,
                           'tempest': {nm(g): {'hits': d['hits'], 'dmg': round(d['dmg']), 't': d['t']} for g, d in p['tempest'].items()},
-                          'tempestCasts': p['tempestCasts']})
+                          'tempestCasts': p['tempestCasts'],
+                          'ports': {nm(g): n for g, n in p['ports'].items()}})
         return {'step': 0.25, 'log': log_name, 'updated': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                 'pulls': pulls, 'specs': dict(self.specs)}
 

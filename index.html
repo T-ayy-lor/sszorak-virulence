@@ -360,6 +360,9 @@ const SPECS = {250:['Death Knight','Blood','tank'],251:['Death Knight','Frost','
   71:['Warrior','Arms','dps'],72:['Warrior','Fury','dps'],73:['Warrior','Protection','tank']};
 const CLASS_COLOR = {'Death Knight':'#C41E3A','Demon Hunter':'#A330C9','Druid':'#FF7C0A','Evoker':'#33937F','Hunter':'#AAD372','Mage':'#3FC7EB','Monk':'#00FF98','Paladin':'#F48CBA','Priest':'#FFFFFF','Rogue':'#FFF468','Shaman':'#0070DD','Warlock':'#8788EE','Warrior':'#C69B6D'};
 const info = n => SPECS[SPEC_OF[n]] || ['Unknown','','dps'];
+// hover note on Daragnos's name: Demonic Circle: Teleport casts, counted by the uploader, over the pulls in view
+const PORT_TIP = ['Daragnos'];
+const nameTip = n => PORT_TIP.includes(n) ? ` title="casted demonic circle: teleport ${DATA.pulls.reduce((a, p) => a + ((p.ports || {})[n] || 0), 0)} times"` : '';
 const classHex = n => CLASS_COLOR[info(n)[0]] || '#999999';
 const playerColor = (n, a=1) => { const h=classHex(n); return a>=1? h : h + Math.round(a*255).toString(16).padStart(2,'0'); };
 // healers with an assigned spot in the raid plan (Zynzii) always stay visible
@@ -569,7 +572,7 @@ function table(model){
   const pct = v => `${Math.round(v*100)}%`;
   const cell = (txt,cls) => cls?`<span class="pill ${cls}">${txt}</span>`:txt;
   $('tbl').querySelector('tbody').innerHTML = rows.map(r=>`<tr tabindex="0" data-n="${r.name}" class="${r.name===st.sel?'sel':''}">
-    <td style="--cc:${classHex(r.name)}"><span class="dot" style="background:${classHex(r.name)}"></span><span class="pn">${r.name}</span><span class="spec">${info(r.name)[1]} ${info(r.name)[0]}</span></td>
+    <td style="--cc:${classHex(r.name)}"><span class="dot" style="background:${classHex(r.name)}"></span><span class="pn"${nameTip(r.name)}>${r.name}</span><span class="spec">${info(r.name)[1]} ${info(r.name)[0]}</span></td>
     <td>${r.n}</td>
     <td>${cell(isFinite(r.drift)?r.drift.toFixed(1)+' yd':'–', flag(all('drift'),r.drift))}</td></tr>`).join('');
   document.querySelectorAll('th[data-sort]').forEach(th=>{ th.classList.toggle('on', th.dataset.sort===st.sort); th.classList.toggle('asc', st.asc); });
@@ -774,7 +777,7 @@ function renderMeter(){
   if (!list.some(p => p.dmg && Object.keys(p.dmg).length)){ unlock('dmg'); box.innerHTML = '<p class="empty">No damage data for these pulls.</p>'; $('meterSum').textContent = list.length === 1 ? pullLabel(list[0]) : `${list.length} pulls`; renderTempest(); return; }
   const which = showView('dmg', list);
   lockHeight('dmg', new Set(pulls.flatMap(p => Object.entries(p.dmg || {}).filter(([k, d]) => d.all > 0).map(([k]) => k))).size, 'mrow', which);
-  box.innerHTML = rows.map(([n, v], i) => `<div class="mrow"><span class="mrank">${i + 1}</span><span class="mname" style="--cc:${classHex(n)}"><span class="pn">${esc(n)}</span></span><span class="mbar"><i style="width:${(v / max * 100).toFixed(1)}%;background:${classHex(n)}"></i></span><span class="mval">${fmt(v)}</span><span class="mdps">${dur > 0 ? fmt(v / dur) : '–'}</span><span class="mpct">${(v / sum * 100).toFixed(1)}%</span></div>`).join('') || '<p class="empty">No damage recorded yet.</p>';
+  box.innerHTML = rows.map(([n, v], i) => `<div class="mrow"><span class="mrank">${i + 1}</span><span class="mname" style="--cc:${classHex(n)}"><span class="pn"${nameTip(n)}>${esc(n)}</span></span><span class="mbar"><i style="width:${(v / max * 100).toFixed(1)}%;background:${classHex(n)}"></i></span><span class="mval">${fmt(v)}</span><span class="mdps">${dur > 0 ? fmt(v / dur) : '–'}</span><span class="mpct">${(v / sum * 100).toFixed(1)}%</span></div>`).join('') || '<p class="empty">No damage recorded yet.</p>';
   $('meterSum').textContent = `${list.length === 1 ? pullLabel(list[0]) : `${list.length} pulls, ${Math.round(dur / 60)} min total`} · raid ${fmt(dur > 0 ? sum / dur : 0)} DPS · ${fmt(sum)} damage`;
   if (GR.dmg.view === 'graph') damageGraph(list, rows, dur, sum);
   renderTempest();
@@ -798,7 +801,7 @@ function renderTempest(){
   list.forEach(p => { casts += p.tempestCasts || 0; Object.entries(p.tempest || {}).forEach(([n, d]) => { const t = tot[n] || (tot[n] = {hits:0, dmg:0}); t.hits += d.hits; t.dmg += d.dmg; }); });
   const rows = Object.entries(tot).filter(([n, d]) => d.hits > 0 || d.dmg > 0).sort((a, b) => b[1].hits - a[1].hits || b[1].dmg - a[1].dmg);
   const max = rows.length ? Math.max(...rows.map(r => r[1].hits)) || 1 : 1, hits = rows.reduce((s, r) => s + r[1].hits, 0);
-  box.innerHTML = rows.map(([n, d], i) => `<div class="mrow trow"><span class="mrank">${i + 1}</span><span class="mname" style="--cc:${classHex(n)}"><span class="pn">${esc(n)}</span></span><span class="mbar"><i style="width:${(d.hits / max * 100).toFixed(1)}%;background:${classHex(n)}"></i></span><span class="mval">${d.hits}</span><span class="mdps">${fmt(d.dmg)}</span></div>`).join('') || '<p class="empty">Nobody was hit by Tempest.</p>';
+  box.innerHTML = rows.map(([n, d], i) => `<div class="mrow trow"><span class="mrank">${i + 1}</span><span class="mname" style="--cc:${classHex(n)}"><span class="pn"${nameTip(n)}>${esc(n)}</span></span><span class="mbar"><i style="width:${(d.hits / max * 100).toFixed(1)}%;background:${classHex(n)}"></i></span><span class="mval">${d.hits}</span><span class="mdps">${fmt(d.dmg)}</span></div>`).join('') || '<p class="empty">Nobody was hit by Tempest.</p>';
   $('tempestSum').textContent = `${list.length === 1 ? 'Pull ' + list[0].n : list.length + ' pulls'} · ${casts} Tempest cast${casts === 1 ? '' : 's'} · ${hits} hits`;
   if (GR.tmp.view === 'graph') tempestGraph(list, rows);
 }

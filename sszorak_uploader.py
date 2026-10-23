@@ -562,8 +562,9 @@ def main():
                     print(f'\n[{stamp()}] Found {n} Sszorak pull{"" if n == 1 else "s"} and {nf} Twin Fangs pull{"" if nf == 1 else "s"} so far')
                 # a pull ended (or first look at a log with Sszorak pulls): queue an upload
                 wait = MIN_UPLOAD_GAP - (time.time() - last_upload)
+                # only a finished pull queues an upload; a pull that just started doesn't use up the 6-minute slot
                 done = (parser.finished, fangs.finished)
-                if (parser.pulls or fangs.pulls or (fangs.cur and fangs.cur['casts'])) and done != seen_finished:
+                if sum(done) > 0 and done != seen_finished:
                     seen_finished, pending = done, True
                     if not (dry or once) and wait > 0:
                         print(f'[{stamp()}] Pull ended; uploading in {int(wait // 60)} min {int(wait % 60)} s '

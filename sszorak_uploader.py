@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Sszorak uploader: watches your WoW combat log and, after every Sszorak pull or wipe,
-pushes the night's data (positions, Virulence casts, explosions, damage, Tempest) to
-nights/<log name>.json in your GitHub Pages repository, and lists the night in nights.json.
-The site picks it up on its own.
+Raid uploader: watches your WoW combat log and, after every pull or wipe, pushes the night's data
+to your GitHub Pages repository. The pages pick it up on their own.
+  Sszorak: positions, Virulence casts, explosions, damage, Tempest -> nights/<log name>.json, listed in nights.json
+  Twin Fangs: every cast of the spell the raid kicks, who kicked it and how fast -> fangs/<log name>.json, listed in fangs.json
 """
-import base64, codecs, csv, getpass, glob, json, os, ssl, sys, time, urllib.error, urllib.request
+import base64, codecs, csv, getpass, glob, json, os, re, ssl, sys, time, urllib.error, urllib.request
 from datetime import datetime, timezone
 
 # ---- settings ----
@@ -22,6 +22,8 @@ ENC, BOSS_NPC = '3420', '-257347-'           # Sszorak encounter ID and creature
 VIR_A, VIR_B, BOOM = '1297707', '1299899', '1300089'
 TEMPEST, TEMPEST_CAST = '1287083', '1287072'   # Tempest hit/debuff and the boss's Tempest cast
 DMG_STEP = 5                                   # seconds per damage window in each pull's timeline
+FANGS_SPELL = '1308385'                        # Twin Fangs: the cast the raid has to kick
+FANGS_DIR, FANGS_INDEX = 'fangs', 'fangs.json'
 
 
 class Parser:
@@ -278,6 +280,93 @@ class Parser:
                 'pulls': pulls, 'specs': dict(self.specs)}
 
 
+class FangsParser:
+    """Records every cast of FANGS_SPELL and the kick that stopped it, in whatever encounter it shows up in
+    (so it works before we know Twin Fangs' encounter ID). Encounters without that cast are dropped."""
+    KEYS = re.compile('ENCOUNTER_START|ENCOUNTER_END|COMBATANT_INFO|' + FANGS_SPELL)
+
+    def __init__(self):
+        self.pulls, self.cur, self.leftover = [], None, ''
+        self.names, self.specs = {}, {}
+        self.finished = 0          # count of kept pulls that have ended
+
+    def feed(self, text):
+        text = self.leftover + text
+        end = text.rfind('\n')
+        if end < 0:
+            self.leftover = text; return
+        last = -1
+        for m in self.KEYS.finditer(text, 0, end):          # only lines that can matter; everything else is skipped
+            a = text.rfind('\n', 0, m.start()) + 1
+            if a == last: continue
+            last = a
+            b = text.find('\n', m.start())
+            try: self.line(text[a:b if b >= 0 else end])
+            except (IndexError, ValueError): pass
+        self.leftover = text[end + 1:]
+
+    def close(self, r):
+        c = self.cur
+        if r: c['kill'], c['dur'] = r[5] == '1', int(r[6]) / 1000
+        else: c['dur'] = c['lastT']
+        c['ended'] = True
+        if c['casts']:
+            self.pulls.append(c); self.finished += 1
+        self.cur = None
+
+    def line(self, l):
+        l = l.rstrip('\r')
+        sep = l.find('  ')
+        if sep < 0: return
+        rest = l[sep + 2:]
+        ev = rest[:rest.find(',')]
+        if ev == 'ENCOUNTER_START':
+            if self.cur: self.close(None)
+            r = Parser.split(rest)
+            self.cur = dict(enc=r[1], encName=r[2], t0=Parser.ts(l), clock=l.split(' ', 1)[1][:8].split('.')[0], date=l.split(' ', 1)[0],
+                            diff=int(r[3]), dur=0.0, kill=False, ended=False, lastT=0.0, casts=[], open={}, specGuid={})
+            return
+        c = self.cur
+        if c is None: return
+        t = Parser.ts(l) - c['t0']; c['lastT'] = t
+        if ev == 'ENCOUNTER_END':
+            self.close(rest.split(',')); return
+        if ev == 'COMBATANT_INFO':
+            r = rest.split(',', 27); c['specGuid'][r[1]] = int(r[25]); return
+        r = Parser.split(rest)
+        if ev == 'SPELL_CAST_START' and r[9] == FANGS_SPELL:
+            cast = {'t': t, 'src': r[1], 'name': r[2], 'kick': None, 'res': None}
+            c['casts'].append(cast); c['open'][r[1]] = cast
+        elif ev == 'SPELL_INTERRUPT' and FANGS_SPELL in (r[12] if len(r) > 12 else '', r[29] if len(r) > 29 else ''):
+            cast = c['open'].pop(r[5], None)
+            who = r[2].split('-')[0]
+            if r[1].startswith('Player-'): self.names[r[1]] = who
+            if cast:
+                cast['kick'] = {'by': who, 'pet': not r[1].startswith('Player-'), 'spell': r[10], 'd': t - cast['t']}
+                cast['res'] = 'kicked'
+        elif ev == 'SPELL_CAST_SUCCESS' and r[9] == FANGS_SPELL:
+            cast = c['open'].pop(r[1], None)
+            if cast: cast['res'] = 'completed'
+        elif ev == 'SPELL_CAST_FAILED' and r[9] == FANGS_SPELL:
+            cast = c['open'].pop(r[1], None)
+            if cast: cast['res'] = 'stopped'
+
+    def build(self, log_name):
+        pulls = self.pulls + ([self.cur] if self.cur and self.cur['casts'] else [])
+        for p in pulls:
+            for g, sp in p['specGuid'].items():
+                if g in self.names: self.specs[self.names[g]] = sp
+        out, count = [], {}
+        for p in pulls:
+            count[p['enc']] = count.get(p['enc'], 0) + 1
+            out.append({'n': count[p['enc']], 'enc': p['enc'], 'encName': p['encName'], 'clock': p['clock'], 'date': p['date'], 'diff': p['diff'],
+                        'dur': round(p['dur'] if p['ended'] else p['lastT'], 1), 'kill': p['kill'], 'live': not p['ended'],
+                        'casts': [{'t': round(k['t'], 2), 'caster': k['name'], 'src': k['src'].rsplit('-', 1)[-1],
+                                   'kick': dict(k['kick'], d=round(k['kick']['d'], 3)) if k['kick'] else None, 'res': k['res']} for k in p['casts']]})
+        return {'log': log_name, 'spell': int(FANGS_SPELL), 'updated': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                'pulls': out, 'specs': dict(self.specs)}
+
+
 # ---- GitHub ----
 def get_token():
     tok = os.environ.get('GITHUB_TOKEN')
@@ -316,41 +405,45 @@ class Uploader:
     def api(self, method, path, body=None):
         return gh(method, f'https://api.github.com/repos/{REPO}/{path}', self.token, body)
 
-    def publish(self, night_file, data, entry, message):
-        night_text = json.dumps(data, separators=(',', ':'), ensure_ascii=False)
-        night_size = len(night_text.encode())
-        steps = 8
+    def publish(self, parts, message):
+        """parts: list of (night_file, data, index_path, index_entry). Everything goes up as one commit."""
+        texts = [(f, json.dumps(d, separators=(',', ':'), ensure_ascii=False)) for f, d, _, _ in parts]
+        steps = 5 + len(parts) * 2
         for attempt in range(3):
             bar(0, steps, 'Checking the latest commit')
             head = self.api('GET', f'git/ref/heads/{BRANCH}')['object']['sha']
             bar(1, steps, 'Reading the latest commit')
             base_tree = self.api('GET', f'git/commits/{head}')['tree']['sha']
-            bar(2, steps, f'Reading {INDEX_PATH}')
-            try:
-                cur = self.api('GET', f'contents/{INDEX_PATH}?ref={head}')
-                idx = json.loads(base64.b64decode(cur['content']).decode())
-            except urllib.error.HTTPError as e:
-                if e.code != 404: raise
-                idx = None
-            index_text = json.dumps(merge_index(idx, entry), indent=1, ensure_ascii=False)
-            entries = []
-            for n, (path, text) in enumerate(((night_file, night_text), (INDEX_PATH, index_text))):
-                bar(3 + n, steps, f'Uploading {path} ({fmt_size(len(text.encode()))})')
+            step = 2
+            for _, _, ip, entry in parts:
+                bar(step, steps, f'Reading {ip}'); step += 1
+                try:
+                    cur = self.api('GET', f'contents/{ip}?ref={head}')
+                    idx = json.loads(base64.b64decode(cur['content']).decode())
+                except urllib.error.HTTPError as e:
+                    if e.code != 404: raise
+                    idx = None
+                texts.append((ip, json.dumps(merge_index(idx, entry), indent=1, ensure_ascii=False)))
+            entries, total = [], 0
+            for path, text in texts[:len(parts) * 2]:
+                bar(min(step, steps - 3), steps, f'Uploading {path} ({fmt_size(len(text.encode()))})'); step += 1
+                total += len(text.encode())
                 blob = self.api('POST', 'git/blobs', {'content': text, 'encoding': 'utf-8'})
                 entries.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']})
-            bar(5, steps, 'Building the file tree')
+            bar(steps - 3, steps, 'Building the file tree')
             tree = self.api('POST', 'git/trees', {'base_tree': base_tree, 'tree': entries})
-            bar(6, steps, 'Creating the commit')
+            bar(steps - 2, steps, 'Creating the commit')
             commit = self.api('POST', 'git/commits', {'message': message, 'tree': tree['sha'], 'parents': [head]})
-            bar(7, steps, 'Publishing the commit')
+            bar(steps - 1, steps, 'Publishing the commit')
             try:
                 self.api('PATCH', f'git/refs/heads/{BRANCH}', {'sha': commit['sha'], 'force': False})
-                bar(8, steps, f'Done · {fmt_size(night_size + len(index_text.encode()))} uploaded')
+                bar(steps, steps, f'Done · {fmt_size(total)} uploaded')
                 print()
                 return
             except urllib.error.HTTPError as e:
                 if e.code == 422 and attempt < 2:            # someone else committed meanwhile; rebuild on top of it
                     print(); print(f'[{stamp()}] GitHub has a newer commit; rebuilding on top of it')
+                    texts = texts[:len(parts)]
                     continue
                 raise
 
@@ -362,7 +455,7 @@ def date_key(d):
 def night_entry(data, night_file):
     pulls = data['pulls']
     first = pulls[0] if pulls else {}
-    hps = [p['hp'] for p in pulls if p.get('hp') is not None and not p['kill']]
+    hps = [p['hp'] for p in pulls if p.get('hp') is not None and not p['kill']]   # Twin Fangs pulls carry no hp
     return {'file': night_file, 'log': data['log'], 'date': first.get('date'), 'diff': first.get('diff'),
             'pulls': len(pulls), 'kill': any(p['kill'] for p in pulls), 'best': min(hps) if hps else None,
             'updated': data['updated']}
@@ -402,32 +495,42 @@ def main():
             sys.exit(f'Could not reach GitHub: {e.reason}')
         print(f'[{stamp()}] Connected to github.com/{REPO}')
 
-    path, fh, parser, seen_finished, pending, last_upload = None, None, None, -1, False, 0.0
+    path, fh, parser, fangs, seen_finished, pending, last_upload = None, None, None, None, None, False, 0.0
     dec, pos = None, 0
-    print(f'[{stamp()}] Watching {LOG_DIR} for Sszorak pulls. Press Control-C to stop.')
+    print(f'[{stamp()}] Watching {LOG_DIR} for Sszorak and Twin Fangs pulls. Press Control-C to stop.')
 
     def send():
         """Build the night from everything read so far and publish it. Returns True on success."""
-        data = parser.build(os.path.basename(path).replace('Archive-', '', 1))
-        last = data['pulls'][-1] if data['pulls'] else None
-        what = (f"pull {last['n']} " + ('kill' if last['kill'] else 'in progress' if last['live'] else
-                f"wipe at {last['hp'] * 100:.1f}%" if last['hp'] is not None else 'wipe')) if last else 'no pulls'
-        stem = os.path.splitext(os.path.basename(path))[0]
-        if stem.startswith('Archive-'): stem = stem[len('Archive-'):]   # logs moved by the Warcraft Logs uploader app
-        night_file = f'{NIGHT_DIR}/{stem}.json'
-        entry = night_entry(data, night_file)
+        log_name = os.path.basename(path).replace('Archive-', '', 1)
+        stem = os.path.splitext(log_name)[0]                 # logs moved by the Warcraft Logs uploader app lose their Archive- prefix
+        parts, whats = [], []
+        if parser.pulls:
+            data = parser.build(log_name)
+            last = data['pulls'][-1]
+            whats.append(f"Sszorak pull {last['n']} " + ('kill' if last['kill'] else 'in progress' if last['live'] else
+                         f"wipe at {last['hp'] * 100:.1f}%" if last['hp'] is not None else 'wipe'))
+            f = f'{NIGHT_DIR}/{stem}.json'; parts.append((f, data, INDEX_PATH, night_entry(data, f)))
+        fdata = fangs.build(log_name)
+        if fdata['pulls']:
+            last = fdata['pulls'][-1]
+            whats.append(f"Twin Fangs pull {last['n']} " + ('kill' if last['kill'] else 'in progress' if last['live'] else 'wipe'))
+            f = f'{FANGS_DIR}/{stem}.json'; parts.append((f, fdata, FANGS_INDEX, night_entry(fdata, f)))
+        if not parts: return True
+        what = ', '.join(whats)
         if dry:
-            os.makedirs(os.path.join(out_dir, NIGHT_DIR), exist_ok=True)
-            with open(os.path.join(out_dir, night_file), 'w') as f: json.dump(data, f, separators=(',', ':'), ensure_ascii=False)
-            ip = os.path.join(out_dir, INDEX_PATH)
-            idx = json.load(open(ip)) if os.path.exists(ip) else None
-            with open(ip, 'w') as f: json.dump(merge_index(idx, entry), f, indent=1, ensure_ascii=False)
-            print(f'[{stamp()}] Wrote {night_file} ({fmt_size(os.path.getsize(os.path.join(out_dir, night_file)))}) and {INDEX_PATH} in {out_dir} ({len(data["pulls"])} pulls, {what})')
+            for f, d, ip, entry in parts:
+                os.makedirs(os.path.join(out_dir, os.path.dirname(f)), exist_ok=True)
+                with open(os.path.join(out_dir, f), 'w') as fh_: json.dump(d, fh_, separators=(',', ':'), ensure_ascii=False)
+                ipp = os.path.join(out_dir, ip)
+                idx = json.load(open(ipp)) if os.path.exists(ipp) else None
+                with open(ipp, 'w') as fh_: json.dump(merge_index(idx, entry), fh_, indent=1, ensure_ascii=False)
+                print(f'[{stamp()}] Wrote {f} ({fmt_size(os.path.getsize(os.path.join(out_dir, f)))}) and {ip} in {out_dir} ({len(d["pulls"])} pulls)')
+            print(f'[{stamp()}] Latest: {what}')
             return True
-        size = len(json.dumps(data, separators=(',', ':'), ensure_ascii=False).encode())
-        print(f'[{stamp()}] Uploading {night_file} ({fmt_size(size)}) and {INDEX_PATH}: {len(data["pulls"])} pulls, {what}')
+        size = sum(len(json.dumps(d, separators=(',', ':'), ensure_ascii=False).encode()) for _, d, _, _ in parts)
+        print(f'[{stamp()}] Uploading {", ".join(f for f, _, _, _ in parts)} ({fmt_size(size)}): {what}')
         try:
-            up.publish(night_file, data, entry, f'Sszorak data: {what}')
+            up.publish(parts, f'Raid data: {what}')
             print(f'[{stamp()}] Uploaded. The site updates in a minute or two.')
             return True
         except Exception as e:
@@ -439,9 +542,9 @@ def main():
             newest = path_override or newest_log()
             if newest and newest != path:
                 if fh: fh.close()
-                path, fh, parser = newest, open(newest, 'rb'), Parser()
+                path, fh, parser, fangs = newest, open(newest, 'rb'), Parser(), FangsParser()
                 dec, pos = codecs.getincrementaldecoder('utf-8')(errors='replace'), 0
-                seen_finished, pending = -1, False
+                seen_finished, pending = None, False
                 print(f'[{stamp()}] Reading {os.path.basename(path)} ({fmt_size(os.path.getsize(path))})')
             if fh:
                 total = os.path.getsize(path)
@@ -450,15 +553,18 @@ def main():
                     chunk = fh.read(8 << 20)
                     if not chunk: break
                     pos += len(chunk)
-                    parser.feed(dec.decode(chunk))
+                    text = dec.decode(chunk)
+                    parser.feed(text); fangs.feed(text)
                     if show: bar(pos, total, f'Reading log  {fmt_size(pos)} of {fmt_size(total)}')
                 if show:
                     n = sum(1 for p in parser.pulls if not p['ended'] or (p['dur'] or 0) >= 2)   # same pulls the site shows
-                    print(f'\n[{stamp()}] Found {n} Sszorak pull{"" if n == 1 else "s"} so far')
+                    nf = len(fangs.pulls) + (1 if fangs.cur and fangs.cur['casts'] else 0)
+                    print(f'\n[{stamp()}] Found {n} Sszorak pull{"" if n == 1 else "s"} and {nf} Twin Fangs pull{"" if nf == 1 else "s"} so far')
                 # a pull ended (or first look at a log with Sszorak pulls): queue an upload
                 wait = MIN_UPLOAD_GAP - (time.time() - last_upload)
-                if parser.pulls and parser.finished != seen_finished:
-                    seen_finished, pending = parser.finished, True
+                done = (parser.finished, fangs.finished)
+                if (parser.pulls or fangs.pulls or (fangs.cur and fangs.cur['casts'])) and done != seen_finished:
+                    seen_finished, pending = done, True
                     if not (dry or once) and wait > 0:
                         print(f'[{stamp()}] Pull ended; uploading in {int(wait // 60)} min {int(wait % 60)} s '
                               '(at most one upload every 6 minutes, to stay under GitHub Pages\' build limit).')

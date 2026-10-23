@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -9,7 +9,7 @@
 <style>
 :root{
   --bg:#eef1ee; --panel:#f8faf8; --ink:#17201c; --muted:#5d6a63; --line:#d3dbd5;
-  --accent:#16806a; --ok:#2f7d4f; --ok-bg:#dcefe3; --warn:#9a6212; --warn-bg:#fbefd9; --crit:#c0392b; --crit-bg:#f8dcd8; --ccp:58%;
+  --accent:#b8407a; --ok:#2f7d4f; --ok-bg:#dcefe3; --warn:#9a6212; --warn-bg:#fbefd9; --crit:#c0392b; --crit-bg:#f8dcd8; --ccp:58%;
   --f-display:"Barlow Semi Condensed","Arial Narrow",sans-serif;
   --f-body:"Source Sans 3",system-ui,-apple-system,sans-serif;
   --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
@@ -17,10 +17,10 @@
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0f1513; --panel:#161e1b; --ink:#e3ebe6; --muted:#93a39a; --line:#2a3631;
-  --accent:#3fbf9e; --ok:#5cc28a; --ok-bg:#16301f; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ccp:100%; color-scheme:dark}}
+  --accent:#ec8ab8; --ok:#5cc28a; --ok-bg:#16301f; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ccp:100%; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0f1513; --panel:#161e1b; --ink:#e3ebe6; --muted:#93a39a; --line:#2a3631;
-  --accent:#3fbf9e; --ok:#5cc28a; --ok-bg:#16301f; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ccp:100%; color-scheme:dark}
+  --accent:#ec8ab8; --ok:#5cc28a; --ok-bg:#16301f; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ccp:100%; color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
 .wrap{max-width:1400px;margin:0 auto;padding:20px max(16px,env(safe-area-inset-right,0px)) 40px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:18px}
@@ -146,7 +146,7 @@ function setTheme(t, remember){
   if (remember){ try { localStorage.setItem('vir-theme', t); } catch (e) {} }
 }
 (() => { let saved = null; try { saved = localStorage.getItem('vir-theme'); } catch (e) {}
-  setTheme(saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'), false); })();
+  setTheme(saved || 'dark', false); })();   // dark by default
 $('thLight').onclick = () => setTheme('light', true); $('thDark').onclick = () => setTheme('dark', true);
 
 // ---- data: fangs.json lists each night's file; a night is every log for one date ----

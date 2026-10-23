@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -12,7 +12,7 @@
 /* Layout: map-first analysis bench — square position map on the left, controls + player table on the right; stacks on phones */
 :root{
   --bg:#eef1ee; --panel:#f8faf8; --ink:#17201c; --muted:#5d6a63; --line:#d3dbd5;
-  --accent:#16806a; --typeA:#c77b12; --typeB:#7a4fd0; --boom:#d23a2e; --warn:#b7791f; --warn-bg:#fbefd9; --crit:#c0392b; --crit-bg:#f8dcd8; --ok:#2f7d4f;
+  --accent:#b8407a; --typeA:#c77b12; --typeB:#7a4fd0; --boom:#d23a2e; --warn:#b7791f; --warn-bg:#fbefd9; --crit:#c0392b; --crit-bg:#f8dcd8; --ok:#2f7d4f;
   --map:#151c19; --grid:#26322d; --gridtxt:#74867d; --mapink:#e6eee9; --ccp:58%;
   --f-display:"Barlow Semi Condensed","Arial Narrow",sans-serif;
   --f-body:"Source Sans 3",system-ui,-apple-system,sans-serif;
@@ -20,11 +20,11 @@
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0f1513; --panel:#161e1b; --ink:#e3ebe6; --muted:#93a39a; --line:#2a3631;
-  --accent:#3fbf9e; --typeA:#f0a33a; --typeB:#a98cf2; --boom:#ff5a4c; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ok:#5cc28a;
+  --accent:#ec8ab8; --typeA:#f0a33a; --typeB:#a98cf2; --boom:#ff5a4c; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ok:#5cc28a;
   --ccp:100%; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0f1513; --panel:#161e1b; --ink:#e3ebe6; --muted:#93a39a; --line:#2a3631;
-  --accent:#3fbf9e; --typeA:#f0a33a; --typeB:#a98cf2; --boom:#ff5a4c; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ok:#5cc28a;
+  --accent:#ec8ab8; --typeA:#f0a33a; --typeB:#a98cf2; --boom:#ff5a4c; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ok:#5cc28a;
   --ccp:100%; color-scheme:dark}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
 .wrap{max-width:1640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px;display:flex;flex-direction:column;gap:18px}
@@ -635,7 +635,7 @@ function setTheme(t, remember){
   if (remember){ try { localStorage.setItem('vir-theme', t); } catch (e) {} }
 }
 (() => { let saved = null; try { saved = localStorage.getItem('vir-theme'); } catch (e) {}
-  setTheme(saved || (isDark() ? 'dark' : 'light'), false); })();
+  setTheme(saved || 'dark', false); })();   // dark by default
 $('thLight').onclick = () => setTheme('light', true);
 $('thDark').onclick = () => setTheme('dark', true);
 document.fonts && document.fonts.ready.then(render);

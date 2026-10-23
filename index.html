@@ -11,19 +11,19 @@
 <style>
 /* Layout: map-first analysis bench — square position map on the left, controls + player table on the right; stacks on phones */
 :root{
-  --bg:#eef1ee; --panel:#f8faf8; --ink:#17201c; --muted:#5d6a63; --line:#d3dbd5;
-  --accent:#b8407a; --typeA:#c77b12; --typeB:#7a4fd0; --boom:#d23a2e; --warn:#b7791f; --warn-bg:#fbefd9; --crit:#c0392b; --crit-bg:#f8dcd8; --ok:#2f7d4f;
-  --map:#151c19; --grid:#26322d; --gridtxt:#74867d; --mapink:#e6eee9; --ccp:58%;
+  --bg:#fbe4ee; --panel:#fff2f8; --ink:#4a1832; --muted:#93506f; --line:#f2c3d8;
+  --accent:#c23d7e; --typeA:#c77b12; --typeB:#7a4fd0; --boom:#d23a2e; --warn:#b7791f; --warn-bg:#fbefd9; --crit:#c0392b; --crit-bg:#f8dcd8; --ok:#2f7d4f;
+  --map:#181418; --grid:#332a31; --gridtxt:#88757f; --mapink:#efe6eb; --ccp:58%;
   --f-display:"Barlow Semi Condensed","Arial Narrow",sans-serif;
   --f-body:"Source Sans 3",system-ui,-apple-system,sans-serif;
   --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0f1513; --panel:#161e1b; --ink:#e3ebe6; --muted:#93a39a; --line:#2a3631;
+  --bg:#160f13; --panel:#1f151b; --ink:#f3e4eb; --muted:#b596a5; --line:#402b37;
   --accent:#ec8ab8; --typeA:#f0a33a; --typeB:#a98cf2; --boom:#ff5a4c; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ok:#5cc28a;
   --ccp:100%; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0f1513; --panel:#161e1b; --ink:#e3ebe6; --muted:#93a39a; --line:#2a3631;
+  --bg:#160f13; --panel:#1f151b; --ink:#f3e4eb; --muted:#b596a5; --line:#402b37;
   --accent:#ec8ab8; --typeA:#f0a33a; --typeB:#a98cf2; --boom:#ff5a4c; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ok:#5cc28a;
   --ccp:100%; color-scheme:dark}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
@@ -504,12 +504,12 @@ function draw(model){
     if (mapImg.complete && mapImg.naturalWidth) ctx.drawImage(mapImg, 0, 0, W, H);
     ctx.fillStyle='rgba(0,0,0,.32)'; ctx.fillRect(0,0,W,H);
     // 10-yard scale bar
-    const bl=10*VIEW.s; ctx.strokeStyle='#e6eee9'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(24,H-28); ctx.lineTo(24+bl,H-28); ctx.moveTo(24,H-36); ctx.lineTo(24,H-20); ctx.moveTo(24+bl,H-36); ctx.lineTo(24+bl,H-20); ctx.stroke();
-    ctx.fillStyle='#e6eee9'; ctx.fillText('10 yd', 32+bl, H-22);
+    const bl=10*VIEW.s; ctx.strokeStyle='#efe6eb'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(24,H-28); ctx.lineTo(24+bl,H-28); ctx.moveTo(24,H-36); ctx.lineTo(24,H-20); ctx.moveTo(24+bl,H-36); ctx.lineTo(24+bl,H-20); ctx.stroke();
+    ctx.fillStyle='#efe6eb'; ctx.fillText('10 yd', 32+bl, H-22);
   }
   // north marker
-  const nq = orient([MAP.cx+1, MAP.cy]); ctx.save(); ctx.translate(W-46,46); ctx.fillStyle='#e6eee9'; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText('N', nq[0]*26, nq[1]*26); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(nq[0]*14,nq[1]*14); ctx.strokeStyle='#e6eee9'; ctx.stroke(); ctx.restore();
+  const nq = orient([MAP.cx+1, MAP.cy]); ctx.save(); ctx.translate(W-46,46); ctx.fillStyle='#efe6eb'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('N', nq[0]*26, nq[1]*26); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(nq[0]*14,nq[1]*14); ctx.strokeStyle='#efe6eb'; ctx.stroke(); ctx.restore();
 
   const cA=css('--typeA'), cB=css('--typeB'), boomC=css('--boom'), ink=css('--ink'), mink=css('--mapink'), acc=css('--accent');
   HIT=[];
@@ -597,7 +597,7 @@ function render(){
   const single = st.view==='avg' && [1,2].every(g=>CASTS.filter(c=>st.on.has(c.id) && c.side===g).length<=1);
   ['lgA','lgB'].forEach(id=>$(id).hidden = !(st.view==='all' || single)); $('lgAvg').hidden = st.view!=='avg';
   const model = compute(); setView(model.vis); draw(model); table(model); chips();
-  if (!model.vis.length){ ctx.save(); ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(0,L/2-50,L,100); ctx.fillStyle='#e6eee9'; ctx.font=`600 30px ${css('--f-body')||'sans-serif'}`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(CASTS.length?'No casts selected':'No Virulence casts in these pulls yet', L/2, L/2); ctx.restore(); }
+  if (!model.vis.length){ ctx.save(); ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(0,L/2-50,L,100); ctx.fillStyle='#efe6eb'; ctx.font=`600 30px ${css('--f-body')||'sans-serif'}`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(CASTS.length?'No casts selected':'No Virulence casts in these pulls yet', L/2, L/2); ctx.restore(); }
 }
 
 

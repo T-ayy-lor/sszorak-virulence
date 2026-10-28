@@ -3,7 +3,7 @@
 Raid uploader: watches your WoW combat log and, after every pull or wipe, pushes the night's data
 to your GitHub Pages repository. The pages pick it up on their own.
   Sszorak: positions, Virulence casts, explosions, damage, Tempest -> nights/<log name>.json, listed in nights.json
-  Twin Fangs: every cast of the spell the raid kicks, who kicked it and how fast -> fangs/<log name>.json, listed in fangs.json
+  Twin Fangs: every cast of the spell the raid kicks, who kicked it and how fast -> fangs-nights/<log name>.json, listed in fangs.json
 """
 import base64, codecs, csv, getpass, glob, json, os, re, ssl, sys, time, urllib.error, urllib.request
 from datetime import datetime, timezone
@@ -21,10 +21,12 @@ MIN_UPLOAD_GAP = 360        # seconds between uploads: GitHub Pages has a soft l
 ENC, BOSS_NPC = '3420', '-257347-'           # Sszorak encounter ID and creature ID
 VIR_A, VIR_B, BOOM = '1297707', '1299899', '1300089'
 TEMPEST, TEMPEST_CAST = '1287083', '1287072'   # Tempest hit/debuff and the boss's Tempest cast
+SURGE_CAST, SURGE_DEBUFF = '1305959', '1305963'   # Venomous Surge: the boss's cast, and the debuff on 2 ranged players
+SURGE_LEN = 9.5                                # a debuff that lasted at least this long ran out on its own (it lasts 10 s)
 TELEPORT = '48020'                             # Demonic Circle: Teleport, counted per player per pull
 DMG_STEP = 5                                   # seconds per damage window in each pull's timeline
 FANGS_SPELL = '1308385'                        # Twin Fangs: the cast the raid has to kick
-FANGS_DIR, FANGS_INDEX = 'fangs', 'fangs.json'
+FANGS_DIR, FANGS_INDEX = 'fangs-nights', 'fangs.json'   # not 'fangs/': a folder by that name would block the /fangs page link
 
 
 class Parser:
@@ -57,7 +59,7 @@ class Parser:
         self.cur = dict(n=len(self.pulls) + 1, t0=self.ts(line), clock=clock, date=line.split(' ', 1)[0],
                         diff=int(r[3]), size=int(r[4]), ended=False, kill=False, dur=0.0, lastT=0.0,
                         track={}, specGuid={}, aura=[], boom=[], died={}, bossGuid=None, boss=[], bossHp=None, dmg={},
-                        tempest={}, tempestCasts=0, now=0.0, ports={})
+                        tempest={}, tempestCasts=0, now=0.0, ports={}, surgeCasts=[], sur=[], sdeb={})
         self.pulls.append(self.cur)
 
     def end(self, rest):
@@ -122,6 +124,17 @@ class Parser:
         spell = ev.startswith('SPELL_') or ev.startswith('RANGE_')
         if not swing and not spell: return
         if ev in ('SPELL_AURA_APPLIED', 'SPELL_AURA_REMOVED'):
+            if SURGE_DEBUFF in rest:
+                r = self.split(rest)
+                if r[9] == SURGE_DEBUFF and r[5].startswith('Player-'):
+                    self.names[r[5]] = r[6].split('-')[0]
+                    if ev == 'SPELL_AURA_APPLIED':
+                        rec = {'g': r[5], 'on': t, 'off': None}
+                        c['sdeb'][r[5]] = rec; c['sur'].append(rec)
+                    else:
+                        rec = c['sdeb'].pop(r[5], None)
+                        if rec: rec['off'] = t
+                return
             if VIR_A not in rest and VIR_B not in rest: return
             r = self.split(rest)
             if r[9] in (VIR_A, VIR_B) and r[5].startswith('Player-'):
@@ -137,6 +150,8 @@ class Parser:
             elif BOSS_NPC in r[5]: c['bossGuid'] = r[5]
         if ev == 'SPELL_CAST_SUCCESS' and r[9] == TEMPEST_CAST and BOSS_NPC in r[1]:
             c['tempestCasts'] += 1
+        if ev == 'SPELL_CAST_SUCCESS' and r[9] == SURGE_CAST and BOSS_NPC in r[1]:
+            c['surgeCasts'].append(t)
         if ev == 'SPELL_CAST_SUCCESS' and r[9] == TELEPORT and r[1].startswith('Player-'):
             c['ports'][r[1]] = c['ports'].get(r[1], 0) + 1
         if ev == 'SPELL_SUMMON':
@@ -240,6 +255,37 @@ class Parser:
         best = min(cand, key=lambda p: abs(p[0] - t)) if cand else None
         return [round(best[1], 2), round(best[2], 2)] if best and abs(best[0] - t) <= 1.0 else None
 
+    @staticmethod
+    def surge_groups(p):
+        """Venomous Surges in a pull: each boss cast and the debuffs it put on players (applied a few seconds after)."""
+        groups = []
+        for rec in sorted(p['sur'], key=lambda d: d['on']):
+            cast = max((t for t in p['surgeCasts'] if 0 <= rec['on'] - t <= 8), default=None)
+            g = groups[-1] if groups else None
+            if g and ((cast is not None and g['cast'] == cast) or (cast is None and g['cast'] is None and rec['on'] - g['deb'][-1]['on'] <= 4)):
+                g['deb'].append(rec)
+            else:
+                groups.append({'cast': cast, 't': cast if cast is not None else rec['on'], 'deb': [rec]})
+        return groups
+
+    def build_surges(self, p, nm):
+        out = []
+        for g in self.surge_groups(p):
+            deb = []
+            for d in g['deb']:
+                tr, off = p['track'].get(d['g'], []), d['off']
+                died = p['died'].get(d['g'])
+                if off is None: end = 'open'
+                elif off - d['on'] >= SURGE_LEN: end = 'expired'
+                elif died is not None and abs(died - off) <= 0.6: end = 'died'
+                else: end = 'early'
+                stop = off if off is not None else p['lastT']
+                trail = [self.pos_at(tr, d['on'] + k * 0.5) for k in range(int((stop - d['on']) / 0.5) + 1)]
+                deb.append({'n': nm(d['g']), 'on': round(d['on'] - g['t'], 2), 'off': round(stop - g['t'], 2), 'end': end,
+                            'pos': self.pos_at(tr, stop), 'tr': trail})
+            out.append({'t': round(g['t'], 2), 'deb': deb})
+        return out
+
     def build(self, log_name):
         nm = lambda g: self.names.get(g, g)
         for p in self.pulls:
@@ -279,7 +325,8 @@ class Parser:
                           'dmgStep': DMG_STEP,
                           'tempest': {nm(g): {'hits': d['hits'], 'dmg': round(d['dmg']), 't': d['t']} for g, d in p['tempest'].items()},
                           'tempestCasts': p['tempestCasts'],
-                          'ports': {nm(g): n for g, n in p['ports'].items()}})
+                          'ports': {nm(g): n for g, n in p['ports'].items()},
+                          'surges': self.build_surges(p, nm)})
         return {'step': 0.25, 'log': log_name, 'updated': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                 'pulls': pulls, 'specs': dict(self.specs)}
 
@@ -500,8 +547,10 @@ def main():
         print(f'[{stamp()}] Connected to github.com/{REPO}')
 
     path, fh, parser, fangs, seen_finished, pending, last_upload = None, None, None, None, None, False, 0.0
+
     dec, pos = None, 0
     print(f'[{stamp()}] Watching {LOG_DIR} for Sszorak and Twin Fangs pulls. Press Control-C to stop.')
+
 
     def send():
         """Build the night from everything read so far and publish it. Returns True on success."""

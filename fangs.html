@@ -26,6 +26,12 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);fo
 .wrap{max-width:1400px;margin:0 auto;padding:20px max(16px,env(safe-area-inset-right,0px)) 40px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:18px}
 header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px}
 h1{font-family:var(--f-display);font-weight:700;font-size:1.9rem;margin:0}
+.bosspick{position:relative;display:inline-block}
+.bosspick select{appearance:none;-webkit-appearance:none;font:inherit;letter-spacing:inherit;color:inherit;background:transparent;border:0;border-radius:6px;padding:0 1.05em 0 0;margin:0;cursor:pointer;max-width:none}
+.bosspick select:hover{color:var(--accent)}
+.bosspick select:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.bosspick select option{font:600 1rem var(--f-body);color:var(--ink);background:var(--panel)}
+.bosspick::after{content:"";position:absolute;right:.12em;top:50%;width:.36em;height:.36em;border-right:.11em solid currentColor;border-bottom:.11em solid currentColor;transform:translateY(-75%) rotate(45deg);pointer-events:none}
 h2{font-family:var(--f-display);font-weight:600;font-size:1.15rem;margin:0}
 .sub{color:var(--muted);font-size:.95rem}
 #themeSeg{margin-left:auto;align-self:center}
@@ -66,20 +72,37 @@ td.num{font-family:var(--f-mono)}
 .order td.c.late .d{color:var(--warn);font-weight:600}
 .order td.c.miss .d{color:var(--crit);font-weight:600}
 .order td.rh{font-family:var(--f-mono);color:var(--muted);padding-right:6px;text-align:right}
+.btn{font:600 .84rem var(--f-body);color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:6px;padding:6px 11px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn:disabled{opacity:.45;cursor:default}
+.ahead{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between}
+.abtns{display:flex;flex-wrap:wrap;gap:6px}
+.aview{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:10px}
+.aview span{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:.86rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aview b{font-family:var(--f-mono);color:var(--muted);font-weight:600;margin-right:6px}
+.aedit{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px 14px;margin-top:10px}
+.aedit label{display:flex;align-items:center;gap:8px;font:600 .8rem var(--f-mono);color:var(--muted)}
+.aedit label span{min-width:2.2em;text-align:right}
+.aedit input{flex:1;min-width:0;font:600 .9rem var(--f-body);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.aedit input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent)}
+.order td.c.wrong{box-shadow:inset 0 0 0 2px var(--accent)}
+.order td.rh .as{display:block;font:600 .68rem var(--f-body);color:var(--muted);max-width:90px;overflow:hidden;text-overflow:ellipsis}
+.stat.wrong b{color:var(--accent)}
 .key{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.8rem;color:var(--muted);margin-top:10px}
 .key i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:5px}
 .list{display:flex;flex-direction:column;gap:4px;font-size:.86rem}
 .list div{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.3fr) auto;gap:10px;padding:5px 0;border-bottom:1px solid var(--line);align-items:baseline}
 .list .when{font-family:var(--f-mono);color:var(--muted);font-size:.78rem}
 .list .tag{font-family:var(--f-mono);font-weight:600}
-.list .tag.late{color:var(--warn)} .list .tag.miss{color:var(--crit)}
+.list .tag.late{color:var(--warn)} .list .tag.wrong{color:var(--accent)} .list .tag.miss{color:var(--crit)}
 [hidden]{display:none!important}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>Twin Fangs kicks</h1>
+    <h1><span class="bosspick"><select id="boss" aria-label="Boss"><option value="./">Sszorak</option><option value="fangs" selected>Twin Fangs</option></select></span></h1>
     <select id="night" aria-label="Prog night" hidden></select>
     <span class="sub" id="sub">Loading…</span>
     <div class="seg" id="themeSeg" role="group" aria-label="Color theme">
@@ -95,28 +118,36 @@ td.num{font-family:var(--f-mono)}
 
   <div class="panel"><div class="stats" id="stats"></div></div>
 
+  <div class="panel" id="assignPanel">
+    <div class="ahead"><h2>Kick assignments</h2>
+      <div class="abtns" id="aBtns"></div></div>
+    <div id="aBody"></div>
+    <datalist id="roster"></datalist>
+    <p class="note" id="aNote"></p>
+  </div>
+
   <div class="panel">
     <h2>Kick order</h2>
     <div class="tw"><table class="order" id="order"></table></div>
-    <div class="key"><span><i style="background:var(--ok-bg)"></i>kicked in time</span><span><i style="background:var(--warn-bg)"></i>kicked late</span><span><i style="background:var(--crit-bg)"></i>not kicked: the cast went off</span><span><i style="border:1px dashed var(--line)"></i>no result: the cast stopped some other way, or the pull ended</span></div>
-    <p class="note">Each column is a pull and each row is that pull's cast number, in the order the casts started, so a rotation lines up across rows. Each cell shows who kicked that cast and how many seconds after the cast started.</p>
+    <div class="key"><span><i style="background:var(--ok-bg)"></i>kicked in time</span><span><i style="background:var(--warn-bg)"></i>kicked late</span><span><i style="background:var(--crit-bg)"></i>not kicked: the cast went off</span><span><i style="border:1px dashed var(--line)"></i>no result: the cast stopped some other way, or the pull ended</span><span><i style="box-shadow:inset 0 0 0 2px var(--accent)"></i>kicked by someone other than the assigned player</span></div>
+    <p class="note">Each column is a pull and each row is that pull's cast number, in the order the casts started, so a rotation lines up across rows. Each cell shows who kicked that cast and how many seconds after the cast started. With kick assignments set, each row also shows who's assigned that cast.</p>
   </div>
 
   <div class="grid2">
     <div class="panel">
       <h2>Players</h2>
       <div class="tw"><table id="players"></table></div>
-      <p class="note"><b>Kicks</b>: casts this player interrupted. <b>Late</b>: kicks that landed after the late mark. <b>Median</b> and <b>Slowest</b>: seconds from the cast starting to their kick. Pet kicks are listed under the pet's name.</p>
+      <p class="note"><b>Kicks</b>: casts this player interrupted. <b>Late</b>: kicks that landed after the late mark. <b>Median</b> and <b>Slowest</b>: seconds from the cast starting to their kick. With kick assignments set, <b>Assigned</b> is how many of the shown casts were theirs and <b>Got theirs</b> how many of those they kicked. Pet kicks are listed under the pet's name.</p>
     </div>
     <div class="panel">
-      <h2>Late and missed</h2>
+      <h2>Late, missed and wrong player</h2>
       <div class="list" id="bad"></div>
     </div>
   </div>
 
   <div class="panel">
     <h2>How this is measured</h2>
-    <p class="note">The uploader script that feeds the Sszorak page also records every cast of spell 1308385 from the combat log: when the cast started, and whether it was interrupted (and by whom), went off, or stopped some other way. It does this in whatever encounter the spell shows up in, so it works from the first Twin Fangs pull without knowing the encounter's ID. A kick's time is how long after that same caster started the cast the interrupt landed. Anything over the late mark (2.0 s by default, matching the Warcraft Logs query) counts as late. Data arrives the same way as the Sszorak page: after each pull, at most one upload every 6 minutes, and GitHub takes a minute or two to publish it. This page checks for new data every 30 seconds.</p>
+    <p class="note">The uploader script that feeds the Sszorak page also records every cast of spell 1308385 from the combat log: when the cast started, and whether it was interrupted (and by whom), went off, or stopped some other way. It does this in whatever encounter the spell shows up in, so it works from the first Twin Fangs pull without knowing the encounter's ID. A kick's time is how long after that same caster started the cast the interrupt landed. Anything over the late mark (2.0 s by default, matching the Warcraft Logs query) counts as late. Data arrives the same way as the Sszorak page: after each pull, at most one upload every 6 minutes, and GitHub takes a minute or two to publish it. This page checks for new data every 30 seconds. Kick assignments come from fangs-order.json in the repo; the Edit button saves changes in your own browser until a new fangs-order.json is pushed.</p>
   </div>
 </div>
 
@@ -131,7 +162,7 @@ const SPECS = {250:['Death Knight','Blood'],251:['Death Knight','Frost'],252:['D
   262:['Shaman','Elemental'],263:['Shaman','Enhancement'],264:['Shaman','Restoration'],265:['Warlock','Affliction'],266:['Warlock','Demonology'],267:['Warlock','Destruction'],
   71:['Warrior','Arms'],72:['Warrior','Fury'],73:['Warrior','Protection']};
 const CLASS_COLOR = {'Death Knight':'#C41E3A','Demon Hunter':'#A330C9','Druid':'#FF7C0A','Evoker':'#33937F','Hunter':'#AAD372','Mage':'#3FC7EB','Monk':'#00FF98','Paladin':'#F48CBA','Priest':'#FFFFFF','Rogue':'#FFF468','Shaman':'#0070DD','Warlock':'#8788EE','Warrior':'#C69B6D'};
-let SPEC_OF = {};
+let SPEC_OF = {};   // name -> spec ID, for class colors
 const color = n => CLASS_COLOR[(SPECS[SPEC_OF[n]] || [])[0]] || '#8a8a8a';
 const pname = n => `<span class="pn" style="--cc:${color(n)}">${esc(n)}</span>`;
 const dayDate = d => { const [m, dd, y] = d.split('/'); return new Date(Date.UTC(+y, +m - 1, +dd)).toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC'}); };
@@ -177,9 +208,11 @@ async function checkSite(){
       if (!have || have.updated !== e.updated) SITE.files[e.file] = await fetchJSON(e.file);
     }));
     SITE.index = idx; SITE.err = null;
+    try { ORDER.site = await fetchJSON('fangs-order.json'); } catch (e) {}
     // open on the newest night; after that, never change the night someone is looking at
     if (!SITE.view){ const ns = nights(); SITE.view = ns.length ? ns[ns.length - 1].key : null; }
   } catch (e) {
+    try { ORDER.site = await fetchJSON('fangs-order.json'); } catch (x) {}
     SITE.err = /404/.test(String(e)) ? null : 'Could not load the data; trying again in 30 seconds.';
     if (!SITE.index) SITE.index = {nights: []};
   }
@@ -198,13 +231,66 @@ $('night').onchange = e => { SITE.view = e.target.value; st.pull = 'all'; render
 $('pull').onchange = e => { st.pull = e.target.value; render(); };
 $('late').oninput = e => { const v = parseFloat(e.target.value); if (v > 0){ st.late = v; try { localStorage.setItem('fangs-late', v); } catch (x) {} render(); } };
 
+// ---- kick assignments: fangs-order.json in the repo is what everyone sees; edits save in this browser until it's replaced ----
+const ORDER = {site: null, draft: null, editing: false, roster: [], rosterLoaded: false};
+try { const d = JSON.parse(localStorage.getItem('fangs-order') || 'null'); if (d && Array.isArray(d.order)) ORDER.draft = d; } catch (e) {}
+const same = (a, b) => JSON.stringify((a && a.order) || []) === JSON.stringify((b && b.order) || []);
+const activeOrder = () => ((ORDER.draft || ORDER.site || {}).order || []);
+const assigned = i => (activeOrder()[i - 1] || '').trim();
+const isMe = (a, b) => a && b && a.toLowerCase() === b.toLowerCase();
+async function loadRoster(){
+  if (ORDER.rosterLoaded) return; ORDER.rosterLoaded = true;
+  const names = new Set(Object.keys(SPEC_OF));
+  try {   // everyone from the newest Sszorak night
+    const idx = await fetchJSON('nights.json'), last = (idx.nights || []).slice(-1)[0];
+    if (last){ const D = await fetchJSON(last.file); Object.keys(D.specs || {}).forEach(n => names.add(n)); Object.assign(SPEC_OF, D.specs || {}); }
+  } catch (e) {}
+  ORDER.roster = [...names].sort((a, b) => a.localeCompare(b));
+  $('roster').innerHTML = ORDER.roster.map(n => `<option value="${esc(n)}">`).join('');
+}
+function renderAssign(){
+  const ord = activeOrder(), btns = $('aBtns'), body = $('aBody'), note = $('aNote');
+  if (ORDER.editing){
+    const v = ORDER.vals;   // what's typed so far, one per cast
+    body.innerHTML = `<div class="aedit">${v.map((x, k) => `<label><span>#${k + 1}</span><input data-i="${k}" list="roster" value="${esc(x)}" placeholder="player" autocomplete="off"></label>`).join('')}</div>`;
+    body.querySelectorAll('input').forEach(el => el.oninput = () => { v[+el.dataset.i] = el.value; });
+    btns.innerHTML = `<button type="button" class="btn" id="aAdd">Add cast</button><button type="button" class="btn" id="aDel"${v.length <= 1 ? ' disabled' : ''}>Remove last</button><button type="button" class="btn" id="aCancel">Cancel</button><button type="button" class="btn pri" id="aSave">Save</button>`;
+    note.textContent = 'One name per cast, in the order the casts happen. Start typing for raid names. Save keeps it in this browser; to show it to everyone, download fangs-order.json after saving.';
+    $('aAdd').onclick = () => { v.push(''); renderAssign(); body.querySelector(`input[data-i="${v.length - 1}"]`).focus(); };
+    $('aDel').onclick = () => { v.pop(); renderAssign(); };
+    $('aCancel').onclick = () => { ORDER.editing = false; renderAssign(); };
+    $('aSave').onclick = () => {
+      const order = v.map(x => x.trim());
+      while (order.length && !order[order.length - 1]) order.pop();
+      ORDER.draft = {order, updated: new Date().toISOString()};
+      if (same(ORDER.draft, ORDER.site) || (!order.length && !ORDER.site)) ORDER.draft = null;
+      try { ORDER.draft ? localStorage.setItem('fangs-order', JSON.stringify(ORDER.draft)) : localStorage.removeItem('fangs-order'); } catch (e) {}
+      ORDER.editing = false; render();
+    };
+    return;
+  }
+  body.innerHTML = ord.length ? `<div class="aview">${ord.map((n, i) => `<span><b>#${i + 1}</b>${n ? pname(n) : '<span class="when">unassigned</span>'}</span>`).join('')}</div>` : '<p class="empty">No kick order set yet.</p>';
+  const draft = ORDER.draft && !same(ORDER.draft, ORDER.site);
+  btns.innerHTML = `<button type="button" class="btn pri" id="aEdit">${ord.length ? 'Edit' : 'Set kick order'}</button>` +
+    (draft ? `<button type="button" class="btn" id="aDown">Download fangs-order.json</button>` + (ORDER.site ? `<button type="button" class="btn" id="aRevert">Use the site's order</button>` : '') : '');
+  note.textContent = draft ? 'This order is saved in this browser only. To show it to everyone: download fangs-order.json, put it in the sszorak-virulence repo folder (replace the old one), then commit and push in GitHub Desktop.'
+    : ORDER.site ? 'This is the order everyone sees (fangs-order.json on the site).' : 'Set the order once and every pull is checked against it: kicks by someone other than the assigned player are outlined in the grid below.';
+  $('aEdit').onclick = async () => { ORDER.editing = true; ORDER.vals = Array.from({length: Math.max(ord.length, 14)}, (_, k) => ord[k] || ''); renderAssign(); await loadRoster(); };
+  if (draft){
+    $('aDown').onclick = () => { const blob = new Blob([JSON.stringify({order: ORDER.draft.order, updated: ORDER.draft.updated}, null, 1)], {type: 'application/json'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'fangs-order.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
+    if (ORDER.site) $('aRevert').onclick = () => { ORDER.draft = null; try { localStorage.removeItem('fangs-order'); } catch (e) {} render(); };
+  }
+}
+
 const pullLabel = (p, all) => `${all ? dayDate(p.night) + ' · ' : ''}Pull ${p.n} · ${p.clock.slice(0, 5)} · ${mss(p.dur)} · ${p.live ? 'in progress' : p.kill ? 'kill' : 'wipe'}`;
 // one result per cast: ok / late / miss / none
 function judge(c){ if (c.kick) return c.kick.d > st.late ? 'late' : 'ok'; return c.res === 'completed' ? 'miss' : 'none'; }
 
 function render(){
   renderNightSelect();
-  const {pulls, specs} = viewData(); SPEC_OF = specs;
+  const {pulls, specs} = viewData(); SPEC_OF = Object.assign(SPEC_OF, specs);
+  if (!ORDER.editing) renderAssign();
   const all = SITE.view === 'all', none = !pulls.length;
   $('sub').textContent = SITE.err || (none ? 'No Twin Fangs pulls uploaded yet. They show up here after the first pull, once the uploader sends them.' :
     `${pulls.length} pull${pulls.length === 1 ? '' : 's'} · late = kicked more than ${st.late.toFixed(1)} s after the cast started`);
@@ -217,43 +303,60 @@ function render(){
 
   // summary
   const cnt = r => casts.filter(c => c.r === r).length, kicks = casts.filter(c => c.kick);
-  const med = median(kicks.map(c => c.kick.d));
+  const med = median(kicks.map(c => c.kick.d)), hasOrder = activeOrder().some(Boolean);
+  const wrong = c => hasOrder && c.kick && assigned(c.i) && !isMe(c.kick.by, assigned(c.i));
   $('stats').innerHTML = none ? '<p class="empty">Nothing to show yet.</p>' : [
     ['', casts.length, 'casts'], ['ok', cnt('ok'), 'kicked in time'], ['late', cnt('late'), 'kicked late'], ['miss', cnt('miss'), 'not kicked'],
+    ...(hasOrder ? [['wrong', casts.filter(wrong).length, 'kicked by the wrong player']] : []),
     ['', med == null ? '–' : med.toFixed(2) + ' s', 'median kick time']].map(([c, v, l]) => `<div class="stat ${c}"><b>${v}</b><span>${l}</span></div>`).join('');
 
   // kick order grid
   const rows = Math.max(0, ...list.map(p => p.casts.length));
   $('order').innerHTML = none ? '<tr><td class="empty">No pulls yet.</td></tr>' :
     `<tr><th></th>${list.map(p => `<th title="${esc(pullLabel(p, all))}">${all ? dayDate(p.night).replace(/^\w+, /, '') + '<br>' : ''}P${p.n}${p.kill ? ' ✓' : ''}</th>`).join('')}</tr>` +
-    Array.from({length: rows}, (_, r) => `<tr><td class="rh">#${r + 1}</td>${list.map(p => { const c = p.casts[r]; if (!c) return '<td></td>';
-      const j = judge(c), tip = `Pull ${p.n} · cast #${r + 1} at ${mss(c.t)} by ${c.caster}` + (c.kick ? ` · kicked by ${c.kick.by}${c.kick.pet ? ' (pet)' : ''} with ${c.kick.spell} after ${c.kick.d.toFixed(2)} s` : j === 'miss' ? ' · went off' : ' · no result');
-      return `<td class="c ${j}" title="${esc(tip)}">${c.kick ? pname(c.kick.by) : j === 'miss' ? 'missed' : '–'}<span class="d">${c.kick ? c.kick.d.toFixed(2) + ' s' : mss(c.t)}</span></td>`; }).join('')}</tr>`).join('');
+    Array.from({length: rows}, (_, r) => `<tr><td class="rh">#${r + 1}${assigned(r + 1) ? `<span class="as">${esc(assigned(r + 1))}</span>` : ''}</td>${list.map(p => { const c = p.casts[r]; if (!c) return '<td></td>';
+      const j = judge(c), w = wrong(Object.assign({i: r + 1}, c)), tip = `Pull ${p.n} · cast #${r + 1} at ${mss(c.t)} by ${c.caster}` + (assigned(r + 1) ? ` · assigned to ${assigned(r + 1)}` : '') + (c.kick ? ` · kicked by ${c.kick.by}${c.kick.pet ? ' (pet)' : ''} with ${c.kick.spell} after ${c.kick.d.toFixed(2)} s` : j === 'miss' ? ' · went off' : ' · no result');
+      return `<td class="c ${j}${w ? ' wrong' : ''}" title="${esc(tip)}">${c.kick ? pname(c.kick.by) : j === 'miss' ? 'missed' : '–'}<span class="d">${c.kick ? c.kick.d.toFixed(2) + ' s' : mss(c.t)}</span></td>`; }).join('')}</tr>`).join('');
 
   // players
   const P = {};
   kicks.forEach(c => { const q = P[c.kick.by] || (P[c.kick.by] = {n: c.kick.by, d: []}); q.d.push(c.kick.d); });
   const prow = Object.values(P).map(q => ({n: q.n, kicks: q.d.length, late: q.d.filter(d => d > st.late).length, med: median(q.d), max: Math.max(...q.d)}));
-  prow.forEach(r => { r.pct = r.late / r.kicks; });
+  if (hasOrder) casts.forEach(c => { const a = assigned(c.i); if (a && !prow.some(r => isMe(r.n, a))) prow.push({n: a, kicks: 0, late: 0, med: null, max: null}); });
+  prow.forEach(r => { r.pct = r.kicks ? r.late / r.kicks : 0;
+    if (hasOrder){ const mine = casts.filter(c => isMe(assigned(c.i), r.n)); r.asg = mine.length; r.got = mine.filter(c => c.kick && isMe(c.kick.by, r.n)).length; } });
   const key = st.sort, dir = st.asc ? 1 : -1;
-  prow.sort((a, b) => key === 'n' ? dir * a.n.localeCompare(b.n) : dir * ((a[key] - b[key]) || (b.kicks - a.kicks)));
-  const cols = [['n', 'Player'], ['kicks', 'Kicks'], ['late', 'Late'], ['pct', 'Late %'], ['med', 'Median'], ['max', 'Slowest']];
+  prow.sort((a, b) => key === 'n' ? dir * a.n.localeCompare(b.n) : dir * (((a[key] ?? -1) - (b[key] ?? -1)) || (b.kicks - a.kicks)));
+  const cols = [['n', 'Player'], ['kicks', 'Kicks'], ['late', 'Late'], ['pct', 'Late %'], ...(hasOrder ? [['asg', 'Assigned'], ['got', 'Got theirs']] : []), ['med', 'Median'], ['max', 'Slowest']];
   $('players').innerHTML = prow.length ? `<tr>${cols.map(([k, l]) => `<th data-k="${k}" class="${st.sort === k ? 'on' + (st.asc ? ' asc' : '') : ''}">${l}</th>`).join('')}</tr>` +
-    prow.map(r => `<tr><td>${pname(r.n)}</td><td class="num">${r.kicks}</td><td class="num">${r.late}</td><td class="num">${Math.round(r.pct * 100)}%</td><td class="num">${r.med.toFixed(2)} s</td><td class="num">${r.max.toFixed(2)} s</td></tr>`).join('')
+    prow.map(r => `<tr><td>${pname(r.n)}</td><td class="num">${r.kicks}</td><td class="num">${r.late}</td><td class="num">${r.kicks ? Math.round(r.pct * 100) + '%' : '–'}</td>${hasOrder ? `<td class="num">${r.asg}</td><td class="num">${r.got}</td>` : ''}<td class="num">${r.med == null ? '–' : r.med.toFixed(2) + ' s'}</td><td class="num">${r.max == null ? '–' : r.max.toFixed(2) + ' s'}</td></tr>`).join('')
     : '<tr><td class="empty">No kicks yet.</td></tr>';
   $('players').querySelectorAll('th').forEach(th => th.onclick = () => { const k = th.dataset.k; if (st.sort === k) st.asc = !st.asc; else { st.sort = k; st.asc = k === 'n'; } render(); });
 
   // late and missed
-  const bad = casts.filter(c => c.r === 'late' || c.r === 'miss').sort((a, b) => a.p.key - b.p.key || a.t - b.t);
+  const bad = casts.filter(c => c.r === 'late' || c.r === 'miss' || wrong(c)).sort((a, b) => a.p.key - b.p.key || a.t - b.t);
   $('bad').innerHTML = bad.length ? bad.map(c => `<div><span>${all ? esc(dayDate(c.p.night)) + ' · ' : ''}Pull ${c.p.n} · #${c.i}<br><span class="when">${mss(c.t)} · ${esc(c.caster)}</span></span>` +
-    `<span>${c.kick ? pname(c.kick.by) + (c.kick.pet ? ' <span class="when">(pet)</span>' : '') : '<span class="when">nobody</span>'}</span>` +
+    `<span>${c.kick ? pname(c.kick.by) + (c.kick.pet ? ' <span class="when">(pet)</span>' : '') : '<span class="when">nobody</span>'}${hasOrder && assigned(c.i) && !(c.kick && isMe(c.kick.by, assigned(c.i))) ? `<br><span class="when">assigned: ${esc(assigned(c.i))}</span>` : ''}</span>` +
     `<span class="when">${c.kick ? esc(c.kick.spell) : 'cast went off'}</span>` +
-    `<span class="tag ${c.r}">${c.kick ? c.kick.d.toFixed(2) + ' s' : 'missed'}</span></div>`).join('')
-    : `<p class="empty">${none ? 'No pulls yet.' : 'Every cast was kicked within ' + st.late.toFixed(1) + ' s.'}</p>`;
+    `<span class="tag ${c.r === 'ok' && wrong(c) ? 'wrong' : c.r}">${c.kick ? c.kick.d.toFixed(2) + ' s' : 'missed'}</span></div>`).join('')
+    : `<p class="empty">${none ? 'No pulls yet.' : 'Every cast was kicked within ' + st.late.toFixed(1) + ' s' + (hasOrder ? ' by the assigned player.' : '.')}</p>`;
 }
 
 checkSite();
 setInterval(checkSite, 30000);
+// boss picker in the title: each boss has its own page
+(() => { const b = document.getElementById('boss'); const cur = b.value;
+  // a select is as wide as its longest option; size it to the name shown so the arrow sits right after it
+  const fit = () => { const m = document.createElement('span'), cs = getComputedStyle(b);
+    m.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font:${cs.font};letter-spacing:${cs.letterSpacing}`;
+    m.textContent = b.options[b.selectedIndex].text; document.body.appendChild(m);
+    b.style.width = (m.getBoundingClientRect().width + parseFloat(cs.paddingRight) + 2) + 'px'; m.remove(); };
+  fit(); if (document.fonts) document.fonts.ready.then(fit);
+  // GitHub Pages serves fangs.html at /fangs; local servers (VS Code Live Server) need the .html
+  const local = !/\.github\.io$/.test(location.hostname);
+  b.onchange = () => { location.href = local && b.value === 'fangs' ? 'fangs.html' : b.value; };
+  addEventListener('pageshow', () => { b.value = cur; fit(); });   // coming back with the browser's Back button
+})();
 </script>
 </body>
 </html>

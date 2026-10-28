@@ -5,7 +5,7 @@ to your GitHub Pages repository. The pages pick it up on their own.
   Sszorak: positions, Virulence casts, explosions, damage, Tempest -> nights/<log name>.json, listed in nights.json
   Twin Fangs: every cast of the spell the raid kicks, who kicked it and how fast -> fangs-nights/<log name>.json, listed in fangs.json
 """
-import base64, codecs, csv, getpass, glob, json, os, re, ssl, sys, time, urllib.error, urllib.request
+import base64, codecs, csv, getpass, glob, json, os, re, select, ssl, sys, time, urllib.error, urllib.request
 from datetime import datetime, timezone
 
 # ---- settings ----
@@ -550,6 +550,7 @@ def main():
 
     dec, pos = None, 0
     print(f'[{stamp()}] Watching {LOG_DIR} for Sszorak and Twin Fangs pulls. Press Control-C to stop.')
+    print(f'[{stamp()}] Type "push" and press Return to upload right now instead of waiting.')
 
 
     def send():
@@ -622,7 +623,16 @@ def main():
                     if not (dry or once) and wait > 0:
                         print(f'[{stamp()}] Pull ended; uploading in {int(wait // 60)} min {int(wait % 60)} s '
                               '(at most one upload every 6 minutes, to stay under GitHub Pages\' build limit).')
-                if pending and (dry or once or wait <= 0):
+                # typed in this window: "push" uploads now, skipping the 6-minute wait
+                push = False
+                if sys.stdin.isatty() and select.select([sys.stdin], [], [], 0)[0]:
+                    cmd = sys.stdin.readline().strip().lower()
+                    if cmd == 'push':
+                        if parser.pulls or fangs.pulls or (fangs.cur and fangs.cur['casts']): push = True
+                        else: print(f'[{stamp()}] Nothing to upload yet: no Sszorak or Twin Fangs pulls in this log.')
+                    elif cmd: print(f'[{stamp()}] Type "push" and press Return to upload right now.')
+                if push or (pending and (dry or once or wait <= 0)):
+                    if push: print(f'[{stamp()}] Uploading now (push).')
                     if send():
                         pending, last_upload = False, time.time()
                     else:

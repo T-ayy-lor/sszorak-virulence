@@ -358,7 +358,7 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
       <p class="note">Positions are drawn in room coordinates. Faded dark dots mark where Sszorak stood 5 s into each selected cast; the raid alternates sides each Virulence (1st and 3rd on one side, 2nd and 4th on the other), so averages, drift and rings are worked out per side. Each cast is placed by where the raid stood when it went off, so a cast where the raid didn't move (Oct 21 pull 16's 3rd) counts with the side it actually happened on.</p>
       <p class="note">The room image is from raidstrats.gg. The log has no coordinates for that image, so it was lined up by hand: Sszorak's spawn point (the same spot every pull) sits at the platform center, the data is turned 59° counter-clockwise from north-up so Sszorak's tank spot points at the platform edge he is pulled to, and the scale was set so the area the raid stood in meets the platform's rim. Treat wall positions as close, not exact.</p>
       <p class="note">Assigned spots come from the raid plan image, matched onto the same floor image so each ring sits where the plan draws it. For the 2nd Virulence the same layout is turned 180° around the room center, because Sszorak is pulled to the opposite side of the platform. Healers have no spot in the plan, so they have no ring.</p>
-      <p class="note">Neineimuu moved to spot 19 from pull 9 on Oct 21 (21:39), so his drift only counts positions from then on.</p>
+      <p class="note">Spots change over time: the rings show the raid plan in effect for the newest pull in view. From Oct 28 on, Progenesis is spot 18 (was 14), Skwup is spot 14, and Spellrift and Yuña have no spot. Drift only counts a player's positions from when they last changed spots (Neineimuu from pull 9 on Oct 21, Progenesis from Oct 28) whenever the pulls in view reach past that change.</p>
     </div>
   </div>
 </div>
@@ -373,7 +373,9 @@ function fitCanvas(){ const r=cv.getBoundingClientRect(); const px=Math.max(300,
 
 // ---- flatten casts
 // Drift resets: a player's positions only count from this pull on (used when their assigned spot changes).
-const RESETS = { Neineimuu: { date:'10/21/2026', clock:'21:39:45', note:'moved to spot 19 at pull 9 on Oct 21' } };
+const RESETS = { Neineimuu: { date:'10/21/2026', clock:'21:39:45', note:'moved to spot 19 at pull 9 on Oct 21' },
+                 Progenesis: { date:'10/28/2026', clock:'00:00:00', note:'moved from spot 14 to 18 on Oct 28' } };
+// a reset only applies when the pulls in view reach past it (an older night on its own keeps all of that player's positions)
 const dkey = (d, clock) => { const [m, dd, y] = d.split('/'); return `${y}${m.padStart(2,'0')}${dd.padStart(2,'0')} ${clock.padStart(8,'0')}`; };
 Object.values(RESETS).forEach(r => r.key = dkey(r.date, r.clock));
 const pullKey = p => dkey(p.date || '10/15/2026', p.clock);
@@ -389,6 +391,7 @@ function sideOf(c, i){
   return Math.hypot(x - b1[0], y - b1[1]) <= Math.hypot(x - b2[0], y - b2[1]) ? 1 : 2;
 }
 function buildCasts(){
+  const newest = DATA.pulls.reduce((m, p) => { const k = pullKey(p); return k > m ? k : m; }, '');
   CASTS = [];
   DATA.pulls.forEach(p => {
     let i = 0;
@@ -396,7 +399,7 @@ function buildCasts(){
       if (Object.keys(c.players).length < 6) return;
       i++;
       const players = {}; const pk = pullKey(p);
-      Object.entries(c.players).forEach(([n, v]) => { if (!(RESETS[n] && pk < RESETS[n].key)) players[n] = v; });
+      Object.entries(c.players).forEach(([n, v]) => { if (!(RESETS[n] && newest >= RESETS[n].key && pk < RESETS[n].key)) players[n] = v; });
       CASTS.push({id: `P${p.n}·${i}`, pull: p.n, idx: i, side: sideOf(c, i), clock: p.clock, kill: p.kill, hp: p.hp, ...c, players});
     });
   });
@@ -495,7 +498,26 @@ function toPx(c,p){ const q=orient(framePt(c,p)); return [L/2+(q[0]-VIEW.cx)*VIE
 let HIT = [];
 // Raid-plan slots: the plan image was matched onto the same floor image (0.32 scale), then
 // converted to world coordinates. 2nd Virulence uses the same layout turned 180° about the room center.
-const ASSIGN = {"slots":{"Phurry":1,"Integralgrip":2,"Sueldh":3,"Sighhigh":4,"Tayluor":5,"Jeckw":6,"Waynegry":7,"Whispersix":8,"Kiirelan":9,"Daragnos":10,"Calexanich":11,"Monostereo":12,"Yuña":13,"Progenesis":14,"Neineimuu":19,"Aktapewpew":20,"Spellrift":18},"pos":{"1":{"Neineimuu":[364.59,410.03],"Kiirelan":[387.92,432.25],"Daragnos":[368.41,420.69],"Jeckw":[375.54,430.57],"Calexanich":[391.66,443.18],"Monostereo":[356.94,422.23],"Waynegry":[380.9,441.1],"Whispersix":[364.01,430.86],"Yuña":[385.16,452.26],"Progenesis":[351.68,431.65],"Phurry":[372.79,447.99],"Integralgrip":[361.1,440.97],"Sighhigh":[375.53,456.94],"Sueldh":[363.97,449.83],"Tayluor":[351.09,442.5],"Aktapewpew":[387.96,409.63],"__boss":[370.23,439.15],"Spellrift":[398.34,430.31]},"2":{"Neineimuu":[411.41,408.97],"Kiirelan":[388.08,386.75],"Daragnos":[407.59,398.31],"Jeckw":[400.46,388.43],"Calexanich":[384.34,375.82],"Monostereo":[419.06,396.77],"Waynegry":[395.1,377.9],"Whispersix":[411.99,388.14],"Yuña":[390.84,366.74],"Progenesis":[424.32,387.35],"Phurry":[403.21,371.01],"Integralgrip":[414.9,378.03],"Sighhigh":[400.47,362.06],"Sueldh":[412.03,369.17],"Tayluor":[424.91,376.5],"Aktapewpew":[388.04,409.37],"__boss":[405.77,379.85],"Spellrift":[377.66,388.69]}}};
+const ASSIGN_OLD = {"slots":{"Phurry":1,"Integralgrip":2,"Sueldh":3,"Sighhigh":4,"Tayluor":5,"Jeckw":6,"Waynegry":7,"Whispersix":8,"Kiirelan":9,"Daragnos":10,"Calexanich":11,"Monostereo":12,"Yuña":13,"Progenesis":14,"Neineimuu":19,"Aktapewpew":20,"Spellrift":18},"pos":{"1":{"Neineimuu":[364.59,410.03],"Kiirelan":[387.92,432.25],"Daragnos":[368.41,420.69],"Jeckw":[375.54,430.57],"Calexanich":[391.66,443.18],"Monostereo":[356.94,422.23],"Waynegry":[380.9,441.1],"Whispersix":[364.01,430.86],"Yuña":[385.16,452.26],"Progenesis":[351.68,431.65],"Phurry":[372.79,447.99],"Integralgrip":[361.1,440.97],"Sighhigh":[375.53,456.94],"Sueldh":[363.97,449.83],"Tayluor":[351.09,442.5],"Aktapewpew":[387.96,409.63],"__boss":[370.23,439.15],"Spellrift":[398.34,430.31]},"2":{"Neineimuu":[411.41,408.97],"Kiirelan":[388.08,386.75],"Daragnos":[407.59,398.31],"Jeckw":[400.46,388.43],"Calexanich":[384.34,375.82],"Monostereo":[419.06,396.77],"Waynegry":[395.1,377.9],"Whispersix":[411.99,388.14],"Yuña":[390.84,366.74],"Progenesis":[424.32,387.35],"Phurry":[403.21,371.01],"Integralgrip":[414.9,378.03],"Sighhigh":[400.47,362.06],"Sueldh":[412.03,369.17],"Tayluor":[424.91,376.5],"Aktapewpew":[388.04,409.37],"__boss":[405.77,379.85],"Spellrift":[377.66,388.69]}}};
+// Spot positions by spot number (same plan layout every night); who stands where changes over time.
+const SLOT_POS = {1:{}, 2:{}};
+[1, 2].forEach(g => { Object.entries(ASSIGN_OLD.slots).forEach(([n, k]) => { SLOT_POS[g][k] = ASSIGN_OLD.pos[g][n]; }); SLOT_POS[g].__boss = ASSIGN_OLD.pos[g].__boss; });
+const ROSTERS = [
+  {from: '', slots: ASSIGN_OLD.slots},
+  {from: dkey('10/28/2026', '00:00:00'), slots: {Phurry:1, Integralgrip:2, Sueldh:3, Sighhigh:4, Tayluor:5, Jeckw:6, Waynegry:7, Whispersix:8,
+    Kiirelan:9, Daragnos:10, Calexanich:11, Monostereo:12, Skwup:14, Progenesis:18, Neineimuu:19, Aktapewpew:20}},
+];
+function makeAssign(slots){
+  const pos = {1:{__boss: SLOT_POS[1].__boss}, 2:{__boss: SLOT_POS[2].__boss}};
+  Object.entries(slots).forEach(([n, k]) => [1, 2].forEach(g => { if (SLOT_POS[g][k]) pos[g][n] = SLOT_POS[g][k]; }));
+  return {slots, pos};
+}
+let ASSIGN = makeAssign(ROSTERS[0].slots);
+// the rings show the plan in effect for the newest pull in view
+function pickRoster(){
+  const newest = DATA.pulls.reduce((m, p) => { const k = pullKey(p); return k > m ? k : m; }, '');
+  ASSIGN = makeAssign(ROSTERS.filter(r => r.from <= newest).slice(-1)[0].slots);
+}
 function drawAssign(model, sel, avgItems, pass){
   if (!st.assign) return;
   const groups = [...new Set(model.vis.map(c=>c.side))];
@@ -841,7 +863,7 @@ function applyView(){
   const D = viewData(); SITE.data = D;
   DATA = D || {step:0.25, pulls:[]};
   Object.assign(SPEC_OF, (D && D.specs) || {});
-  buildCasts();
+  pickRoster(); buildCasts();
   if (st.preset) st.on = presetSet(st.preset);
   else st.on = new Set([...st.on].filter(id => CASTS.some(c => c.id === id)));
   if (!st.on.size){ st.preset = CASTS.some(c => c.side === 1) ? 'first' : 'all'; st.on = presetSet(st.preset); }

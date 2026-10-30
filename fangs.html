@@ -51,7 +51,9 @@ input[type=number]{width:4.5em;font-family:var(--f-mono)}
 .seg button+button{border-left:1px solid var(--line)}
 .seg button[aria-pressed=true]{background:var(--accent);color:var(--panel)}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
-.ph{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:10px;min-height:32px}
+.ph{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:flex-start;margin-bottom:10px;min-height:32px}
+.ph > h2{flex:0 1 auto;min-width:0}
+.ph > :last-child:not(h2){margin-left:auto}
 .ph input[type=number]{padding:4px 6px}
 .ph .sub{font-size:.84rem}
 .lbl{font-family:var(--f-display);font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:.76rem;color:var(--muted);margin-right:6px}
@@ -84,12 +86,21 @@ td.good{color:var(--ok);font-weight:600} td.bad{color:var(--crit);font-weight:60
 [hidden]{display:none!important}
 a.ab{color:inherit;text-decoration:underline dotted;text-decoration-color:color-mix(in srgb,currentColor 45%,transparent);text-underline-offset:3px;cursor:help}
 a.ab:hover{text-decoration-color:var(--accent)}
+th.srcth{cursor:pointer;user-select:none;max-width:6.5em;line-height:1.2}
+th.srcth:hover{color:var(--accent)}
+th.srcth .sh{display:none}
+th.srcth.off{text-decoration:line-through;opacity:.55}
+td.offc{opacity:.45}
 @media (max-width:600px){
   .panel{padding:12px}
   th,td{padding-left:8px}
   table{font-size:.8rem}
   th{font-size:.62rem;letter-spacing:.02em}
   .quads .quad{padding:8px}
+  #venomT th,#venomT td{padding-left:5px}
+  #venomT th.srcth{max-width:5.4em;font-size:.56rem;letter-spacing:0}
+  #venomT th.srcth .lg{display:none}
+  #venomT th.srcth .sh{display:inline}
   .quads .quad th:not(:first-child),.quads .quad td:not(:first-child){padding-left:4px}
 }
 
@@ -117,20 +128,26 @@ a.ab:hover{text-decoration-color:var(--accent)}
 
 /* map */
 .mapgrid{display:grid;grid-template-columns:minmax(0,632px) minmax(0,1fr);gap:18px}
-.mpanel .ovseg{margin-bottom:12px;max-width:100%}
+.mpanel .ovseg{display:flex;width:fit-content;max-width:100%;margin:12px auto 0}
 .mpanel .ovseg button{white-space:nowrap}
 .mapbox{position:relative;width:100%;aspect-ratio:1/1;border-radius:8px;overflow:hidden;background:#0d140a}
 #mapsvg,#mapsvg svg{display:block;width:100%;height:100%}
 .mapbox [data-tip]{cursor:pointer}
 .tip{position:absolute;z-index:2;pointer-events:none;max-width:240px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 9px;font-size:.82rem;line-height:1.35;box-shadow:0 4px 14px rgba(0,0,0,.35)}
 .tip b{font-weight:600}
-.key{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:.8rem;color:var(--muted);margin-top:10px}
+.key{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:.8rem;color:var(--muted);margin-top:10px;align-items:center}
+.key .hint{margin-left:auto;opacity:.8}
+@media (hover:none){.key .hint{display:none}}
+.mpanel .key{max-width:640px;margin-left:auto;margin-right:auto}
 .key svg{vertical-align:-2px;margin-right:5px}
 .vpanel{display:flex;flex-direction:column;contain:size}
 .vpanel .vt{flex:1 1 0;min-height:0;overflow:auto}
-@media (max-width:1000px){.mapgrid{grid-template-columns:minmax(0,1fr)}.vpanel{contain:none}.vpanel .vt{flex:none;max-height:420px}}
-.ph .scope{padding:4px 8px;font-size:.84rem;max-width:min(100%,19em)}
-.ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end;min-width:0}
+*{scrollbar-width:none}
+*::-webkit-scrollbar{display:none;width:0;height:0}
+@media (max-width:1200px){.mapgrid{grid-template-columns:minmax(0,1fr)}.vpanel{contain:none}.vpanel .vt{flex:none;max-height:420px}.mpanel .mapbox{max-width:640px;margin:0 auto}}
+.ph .scope{padding:4px 8px;font-size:.84rem;width:15em;flex:0 1 15em;min-width:6.5em;text-overflow:ellipsis}
+.ctl{display:flex;flex-wrap:nowrap;gap:6px;align-items:center;justify-content:flex-end;flex:1 1 200px;min-width:0}
+.ctl .seg{flex:none}
 .seg.mini button{padding:4px 9px;font-size:.8rem}
 
 /* bar meters */
@@ -187,15 +204,14 @@ details.setup summary span{color:var(--muted);font-weight:400}
   <div class="mapgrid">
     <div class="panel mpanel">
       <div class="ph"><h2>Map</h2><select class="scope" data-s="map" aria-label="Pulls to show"></select></div>
-      <div class="seg ovseg" id="ovSeg" role="group" aria-label="Map overlay"><button type="button" data-ov="venom">Unnecessary Eternal Venom</button><button type="button" data-ov="ichor">Coiling Ichor</button></div>
       <div class="mapbox" id="mapbox"><div id="mapsvg"></div><div class="tip" id="tip" hidden></div></div>
+      <div class="seg ovseg" id="ovSeg" role="group" aria-label="Map overlay"><button type="button" data-ov="venom">Unnecessary Eternal Venom</button><button type="button" data-ov="ichor">Coiling Ichor</button></div>
       <div class="key" id="mapKey"></div>
-      <p class="note" id="mapNote"></p>
     </div>
     <div class="panel vpanel">
       <div class="ph"><h2>Unnecessary Eternal Venom</h2><select class="scope" data-s="venom" aria-label="Pulls to show"></select></div>
       <div class="tw vt"><table id="venomT"></table></div>
-      <p class="note">Stacks from anything other than soaking a Caustic Globule, Venomous Emergence or Corrosive Spit.</p>
+      <p class="note">Stacks from anything other than soaking a Caustic Globule, Venomous Emergence or Corrosive Spit. Click a source's heading to leave it out of the totals.</p>
     </div>
   </div>
 
@@ -444,9 +460,8 @@ function renderMap(viewAll, list, all){
   $('ovSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.ov === st.ov)));
   const dotI = '<svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5" fill="var(--muted)"/></svg>';
   $('mapKey').innerHTML = st.ov === 'venom'
-    ? `<span>${dotI}where a player took an unnecessary stack</span><span><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2L10 10M10 2L2 10" stroke="#ff5a4a" stroke-width="2.2" stroke-linecap="round"/></svg>Caustic Globule burst (unsoaked)</span><span>hover a mark for details</span>`
-    : `<span>${dotI}where a player's Coiling Ichor dropped</span><span>hover a dot for who and when</span>`;
-  $('mapNote').textContent = FMAP.ppy ? '' : 'Positions are fitted to where people stood until the map is calibrated against a real pull.';
+    ? `<span>${dotI}Unnecessary stack</span><span><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2L10 10M10 2L2 10" stroke="#ff5a4a" stroke-width="2.2" stroke-linecap="round"/></svg>Unsoaked globule burst</span><span class="hint">Hover a mark for details</span>`
+    : `<span>${dotI}Where Coiling Ichor dropped</span><span class="hint">Hover a dot for who and when</span>`;
 }
 const dot = (x, y, c, tip) => `<g ${at(x, y)} data-tip="${esc(tip)}"><circle r="10" fill="transparent"/><circle r="5.5" fill="${c}" stroke="#000" stroke-width="1.5"/></g>`;
 (() => {   // map tooltips: hover (or tap) a mark
@@ -462,21 +477,23 @@ const dot = (x, y, c, tip) => `<g ${at(x, y)} data-tip="${esc(tip)}"><circle r="
   box.addEventListener('pointerleave', () => { tip.hidden = true; });
 })();
 $('ovSeg').querySelectorAll('button').forEach(b => b.onclick = () => { st.ov = b.dataset.ov; saveView(); render(); });
+const VOFF = new Set();   // sources left out of the Eternal Venom totals (click a source's heading)
+const SRC_SHORT = {'Unsoaked globule burst': 'Unsoaked burst', 'Caustic Deluge (tank debuff)': 'Deluge debuff', 'Falling globule': 'Falling glob', 'Stir the Depths': 'Stir', 'Toxic Fumes': 'Fumes'};
+const shortSrc = sn => SRC_SHORT[sn] || sn.replace(/\s*\(.*\)\s*/g, '');
 function renderVenom(list, all){
-  const el = $('venomT');
-  if (list.length === 1){
-    const p = list[0], ev = p.venom.filter(v => !v.ok).sort((a, b) => a.t - b.t);
-    el.innerHTML = `<tr><th>Time</th><th class="l">Player</th><th>Stack</th><th class="l fill">Source</th></tr>` +
-      ev.map(v => `<tr><td class="num">${mss(v.t)}</td><td class="l">${pname(v.n)}</td><td class="num">${v.st}</td><td class="l wr">${esc(srcName(v.src))}</td></tr>`).join('') +
-      Array.from({length: Math.max(0, 3 - ev.length)}, () => `<tr><td class="num dim">–</td><td class="l dim">—</td><td class="num dim">–</td><td class="l dim">–</td></tr>`).join('');
-    return;
-  }
-  const P = {};
-  people(list).forEach(n => { P[n] = {n, c: 0, src: {}}; });
-  list.forEach(p => p.venom.forEach(v => { if (v.ok) return; const q = (P[v.n] ||= {n: v.n, c: 0, src: {}}); q.c++; const sn = srcName(v.src); q.src[sn] = (q.src[sn] || 0) + 1; }));
-  const rows = Object.values(P).sort((a, b) => b.c - a.c || byRoster(a.n, b.n));
-  el.innerHTML = `<tr><th class="l">Player</th><th>Stacks</th><th class="l fill">Sources</th></tr>` +
-    rows.map(r => `<tr><td class="l">${pname(r.n)}</td><td class="num ${r.c ? 'bad' : 'dim'}">${r.c}</td><td class="l dim wr">${esc(Object.entries(r.src).sort((a, b) => b[1] - a[1]).map(([s, c]) => c > 1 ? `${s} ×${c}` : s).join(', '))}</td></tr>`).join('');
+  const el = $('venomT'), single = list.length === 1;
+  const P = {}, cnt = {}, times = {};
+  people(list).forEach(n => { P[n] = {n, src: {}}; });
+  list.forEach(p => p.venom.forEach(v => { if (v.ok) return; const sn = srcName(v.src), q = (P[v.n] ||= {n: v.n, src: {}});
+    q.src[sn] = (q.src[sn] || 0) + 1; cnt[sn] = (cnt[sn] || 0) + 1; ((times[v.n] ||= {})[sn] ||= []).push(mss(v.t)); }));
+  const srcs = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b));
+  const total = r => srcs.reduce((a, sn) => a + (VOFF.has(sn) ? 0 : (r.src[sn] || 0)), 0);
+  const rows = Object.values(P).sort((a, b) => total(b) - total(a) || byRoster(a.n, b.n));
+  el.innerHTML = `<tr><th class="l fill">Player</th>${srcs.map(sn => `<th class="srcth${VOFF.has(sn) ? ' off' : ''}" data-src="${esc(sn)}" title="${VOFF.has(sn) ? 'Left out of the total: click to count it' : 'Click to leave out of the total'}"><span class="lg">${esc(sn)}</span><span class="sh">${esc(shortSrc(sn))}</span></th>`).join('')}<th>Total</th></tr>` +
+    rows.map(r => `<tr><td class="l">${pname(r.n)}</td>${srcs.map(sn => { const v = r.src[sn] || 0, off = VOFF.has(sn);
+      return `<td class="num${v && !off ? '' : ' dim'}${off ? ' offc' : ''}"${single && v ? ` title="${esc(times[r.n][sn].join(', '))}"` : ''}>${v}</td>`; }).join('')}<td class="num ${total(r) ? 'bad' : 'dim'}">${total(r)}</td></tr>`).join('') +
+    (srcs.length ? '' : `<tr><td class="l dim" colspan="2">No unnecessary stacks${list.length ? '' : ' yet'}.</td></tr>`);
+  el.querySelectorAll('th.srcth').forEach(th => th.onclick = () => { const sn = th.dataset.src; VOFF.has(sn) ? VOFF.delete(sn) : VOFF.add(sn); renderVenom(list, all); });
 }
 
 // ---- timeline: one row per raid night, 8:30-11:30 PM ----
@@ -650,7 +667,7 @@ const AB_RE = new RegExp('\\b(' + Object.keys(ABILITY).sort((a, b) => b.length -
 const AB_TEST = new RegExp(AB_RE.source);   // no 'g' flag: test() keeps no state between nodes
 function linkify(root){
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {acceptNode: n =>
-    n.parentElement.closest('a, select, option, script, style, svg, .tip, button, input') ? NodeFilter.FILTER_REJECT : AB_TEST.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP});
+    n.parentElement.closest('a, select, option, script, style, svg, .tip, button, input, th.srcth, .key') ? NodeFilter.FILTER_REJECT : AB_TEST.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP});
   const nodes = []; while (walk.nextNode()) nodes.push(walk.currentNode);
   nodes.forEach(n => {
     const frag = document.createDocumentFragment(); let last = 0; const txt = n.nodeValue;
@@ -672,7 +689,7 @@ function render(){
     sel.innerHTML = opts.map(([v, t]) => `<option value="${v}"${v === SITE.view ? ' selected' : ''}>${esc(t)}</option>`).join(''); }
   const viewAll = viewPulls(ns);
   const done = viewAll.filter(p => !p.live), latest = done.length ? done[done.length - 1] : viewAll[viewAll.length - 1];   // a pull still going is partial: only shown when picked
-  const opts = [['latest', latest ? `Latest pull (${pullLabel(latest, all).replace(/ · \d+:\d\d · .*$/, '')})` : 'Latest pull'],
+  const opts = [['latest', latest ? `Latest · ${all ? dayDate(latest.night) + ' · ' : ''}Pull ${latest.seq}` : 'Latest pull'],
     ...viewAll.slice().reverse().map(p => [p.key, pullLabel(p, all)]), ['all', `Overall (${viewAll.length} pull${viewAll.length === 1 ? '' : 's'})`]];
   const L = {};
   document.querySelectorAll('select.scope').forEach(el => { const k = el.dataset.s;

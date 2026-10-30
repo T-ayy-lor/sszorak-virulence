@@ -81,8 +81,8 @@ a.ab:hover{text-decoration-color:var(--accent)}
   th,td{padding-left:8px}
   table{font-size:.8rem}
   th{font-size:.62rem;letter-spacing:.02em}
-  .quad{padding:10px}
-  .quad th:not(:first-child),.quad td:not(:first-child){padding-left:6px}
+  .quads .quad{padding:8px}
+  .quads .quad th:not(:first-child),.quads .quad td:not(:first-child){padding-left:4px}
 }
 
 /* timeline */
@@ -122,6 +122,8 @@ a.ab:hover{text-decoration-color:var(--accent)}
 .vpanel .vt{flex:1 1 0;min-height:0;overflow:auto}
 @media (max-width:1000px){.mapgrid{grid-template-columns:minmax(0,1fr)}.vpanel{contain:none}.vpanel .vt{flex:none;max-height:420px}}
 .ph .scope{padding:4px 8px;font-size:.84rem;max-width:min(100%,19em)}
+.ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end;min-width:0}
+.seg.mini button{padding:4px 9px;font-size:.8rem}
 
 /* bar meters */
 .meter{display:flex;flex-direction:column;gap:3px}
@@ -498,13 +500,20 @@ function renderCC(list){
     rows.map(([n, c], i) => `<tr><td class="num dim">${i + 1}</td><td class="l">${pname(n)}</td><td class="num${c ? '' : ' dim'}">${c}</td></tr>`).join('');
 }
 function renderSoak(list, all){
-  // one column per Caustic Deluge set; a cell is how many of that set's globules the player soaked (summed over the shown pulls)
+  // one column per Caustic Deluge set; one pull: how many of that set's globules the player soaked.
+  // several pulls: the average per pull, over the pulls that reached that set with the player in them
   const sets = Math.max(list.length ? 1 : 3, ...list.map(p => Math.max(p.deluges.length, ...(p.soaks || []).map(x => x[2]), 0)));
-  const cnt = (n, k) => list.reduce((a, p) => a + (p.soaks || []).filter(x => x[2] === k && x[1] === n).length, 0);
-  const ks = Array.from({length: sets}, (_, i) => i + 1);
+  const ks = Array.from({length: sets}, (_, i) => i + 1), many = list.length > 1;
+  const cell = (n, k) => {
+    const ps = list.filter(p => (p.deluges.length >= k || (p.soaks || []).some(x => x[2] === k)) && present(p).includes(n));
+    const tot = ps.reduce((a, p) => a + (p.soaks || []).filter(x => x[2] === k && x[1] === n).length, 0);
+    if (!many) return [tot, String(tot)];
+    return ps.length ? [tot, (tot / ps.length).toFixed(1)] : [0, '–'];
+  };
   $('soak').innerHTML = `<tr><th class="l fill">Player</th>${ks.map(k => `<th>Set ${k}</th>`).join('')}</tr>` +
-    people(list).map(n => `<tr><td class="l">${pname(n)}</td>${ks.map(k => { const v = cnt(n, k); return `<td class="num${v ? '' : ' dim'}">${v}</td>`; }).join('')}</tr>`).join('');
-  $('soakNote').textContent = 'Each set is the globules from one Caustic Deluge cast; a cell is how many of them the player soaked' + (list.length > 1 ? ', added up over the pulls.' : '.');
+    people(list).map(n => `<tr><td class="l">${pname(n)}</td>${ks.map(k => { const [v, t] = cell(n, k); return `<td class="num${v ? '' : ' dim'}">${t}</td>`; }).join('')}</tr>`).join('');
+  $('soakNote').textContent = many ? 'Each set is the globules from one Caustic Deluge cast; a cell is the average the player soaked per pull, over the pulls that reached that set.'
+    : 'Each set is the globules from one Caustic Deluge cast; a cell is how many of them the player soaked.';
 }
 function renderKicks(list, all){
   const s = setup(), single = list.length === 1, backup = (s.backup || []).filter(Boolean);
@@ -660,6 +669,8 @@ function render(){
   document.querySelectorAll('select.scope').forEach(el => { const k = el.dataset.s;
     if (st.scope[k] !== 'latest' && st.scope[k] !== 'all' && !viewAll.some(p => p.key === st.scope[k])) st.scope[k] = 'latest';
     el.innerHTML = opts.map(([v, t]) => `<option value="${esc(v)}"${v === st.scope[k] ? ' selected' : ''}>${esc(t)}</option>`).join('');
+    const sg = document.querySelector(`.seg.mini[data-s="${k}"]`);
+    if (sg) sg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === st.scope[k])));
     L[k] = st.scope[k] === 'all' ? viewAll : st.scope[k] === 'latest' ? (latest ? [latest] : []) : viewAll.filter(p => p.key === st.scope[k]); });
   $('sub').textContent = SITE.err || '';
   renderTimeline(ns);
@@ -668,7 +679,15 @@ function render(){
   meter($('dmg'), L.dmg, 'dmg'); meter($('heal'), L.heal, 'heal'); renderDeaths(L.deaths, all);
   document.querySelectorAll('.panel').forEach(linkify);
 }
-document.querySelectorAll('select.scope').forEach(el => el.onchange = () => { st.scope[el.dataset.s] = el.value; render(); });
+document.querySelectorAll('select.scope').forEach(el => {
+  el.onchange = () => { st.scope[el.dataset.s] = el.value; render(); };
+  // a quick Latest / Overall switch next to each dropdown
+  const ctl = document.createElement('div'); ctl.className = 'ctl'; el.parentNode.insertBefore(ctl, el);
+  const seg = document.createElement('div'); seg.className = 'seg mini'; seg.setAttribute('role', 'group'); seg.dataset.s = el.dataset.s;
+  seg.innerHTML = '<button type="button" data-v="latest">Latest</button><button type="button" data-v="all">Overall</button>';
+  seg.querySelectorAll('button').forEach(b => b.onclick = () => { st.scope[el.dataset.s] = b.dataset.v; render(); });
+  ctl.append(seg, el);
+});
 $('night').onchange = e => { SITE.view = e.target.value; render(); };
 
 renderSetup();

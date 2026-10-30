@@ -594,27 +594,24 @@ class FangsParser:
             brood = [{'t': round(x['t'], 2), 'src': x['src'].rsplit('-', 1)[-1], 'pos': cpos(x['src'], x['t']), 'res': x['res'],
                       'kick': dict(by=nm(x['kick']['g']), pet=x['kick']['pet'], spell=x['kick']['spell'], d=round(x['kick']['d'], 3)) if x['kick'] else None}
                      for x in p['casts']]
-            # Ravenous Feast: slams (hits grouped 1.5 s apart) and the Tainted Blood after each
-            def groups(hits, gap):
-                gs = []
-                for t, g in sorted(hits):
-                    if not gs or t - gs[-1]['t1'] > gap: gs.append({'t': t, 't1': t, 'hit': set()})
-                    gs[-1]['t1'] = t; gs[-1]['hit'].add(g)
-                return gs
-            slams, tblood = groups(p['feastHits'], 1.5), groups(p['tainted'], 1.5)
+            # Ravenous Feast: up to 3 slams per cast (a slam's hits land together, so hits under 0.8 s apart are one slam),
+            # plus every Tainted Blood hit until the next Ravenous Feast; the page checks each soaker got one after their slam
+            slams = []
+            for t, g in sorted(p['feastHits']):
+                if not slams or t - slams[-1]['t1'] > 0.8: slams.append({'t': t, 't1': t, 'hit': set()})
+                slams[-1]['t1'] = t; slams[-1]['hit'].add(g)
             feasts = []
             starts = sorted(p['feasts'])
-            for s in slams:
-                f = max((i for i, ft in enumerate(starts) if ft <= s['t'] + 0.5), default=None)
+            for s_ in slams:
+                f = max((i for i, ft in enumerate(starts) if ft <= s_['t'] + 0.5), default=None)
                 key = f if f is not None else -1
                 if not feasts or feasts[-1]['key'] != key or len(feasts[-1]['slams']) >= 3:
-                    feasts.append({'key': key, 't': round(starts[f], 2) if f is not None else round(s['t'], 2), 'slams': []})
-                nxt = [x for x in slams if x['t'] > s['t']]
-                limit = nxt[0]['t'] if nxt else s['t'] + 30
-                tb = next((x for x in tblood if s['t'] < x['t'] < limit), None)
-                feasts[-1]['slams'].append({'t': round(s['t'], 2), 'hit': sorted(nm(g) for g in s['hit']),
-                                            'tb': round(tb['t'], 2) if tb else None, 'tbHit': sorted(nm(g) for g in tb['hit']) if tb else []})
-            for f in feasts: f.pop('key')
+                    feasts.append({'key': key, 't': starts[f] if f is not None else s_['t'], 'slams': []})
+                feasts[-1]['slams'].append({'t': round(s_['t'], 2), 'hit': sorted(nm(g) for g in s_['hit'])})
+            for k, f in enumerate(feasts):
+                end = feasts[k + 1]['t'] if k + 1 < len(feasts) else f['t'] + 60
+                f['tb'] = [[round(t, 2), nm(g)] for t, g in sorted(p['tainted']) if f['t'] <= t < end]
+                f['t'] = round(f['t'], 2); f.pop('key')
             # deaths: what hit them last, and when they were back up (a battle rez)
             deaths = []
             for t, g in sorted(p['died']):

@@ -135,9 +135,12 @@ details.setup summary span{color:var(--muted);font-weight:400}
 .ro.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media (max-width:800px){.ro,.ro.g3{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 .setwarn{color:var(--warn);font-size:.84rem;margin:10px 0 0}
-.quads{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-@media (max-width:800px){.quads{grid-template-columns:minmax(0,1fr)}}
+.quads{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media (max-width:1100px){.quads{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:700px){.quads{grid-template-columns:minmax(0,1fr)}}
 .quad{border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0}
+.quad th{white-space:normal;vertical-align:bottom}
+.quad th:not(:first-child),.quad td:not(:first-child){padding-left:12px}
 .quad .qs{font:400 .78rem var(--f-mono);color:var(--muted);margin:2px 0 6px}
 .clog{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
 .clog span{font:400 .74rem var(--f-mono);border-radius:4px;padding:2px 6px;background:var(--ok-bg)}
@@ -194,13 +197,13 @@ details.setup summary span{color:var(--muted);font-weight:400}
   <div class="panel">
     <div class="ph"><h2>Rouse the Brood kicks</h2><select class="scope" data-s="kicks" aria-label="Pulls to show"></select></div>
     <div class="quads" id="kicks"></div>
-    <p class="note">Each Rouse the Brood starts every quadrant's kick order over: the first Visceral Burst is player 1's turn, the next is player 2's, and so on. Anyone dead when a cast starts is skipped, so their turn passes to the next player instead of counting against anyone. <b>Correct</b>: kicked on their turn. <b>Missed</b>: their turn, but someone else kicked it or it went off. <b>Out of turn</b>: kicked a cast that was someone else's. A cast that stopped some other way (the Broodling died) still uses up that turn but isn't counted either way. Left and right are as the raid sees it, facing the bosses.</p>
+    <p class="note">Each Rouse the Brood starts every quadrant's kick order over: the first Visceral Burst is player 1's turn, the next is player 2's, and so on. Anyone dead when a cast starts is skipped, so their turn passes to the next player instead of counting against anyone. <b>Correct</b>: kicked on their turn. <b>Missed</b>: their turn, but someone else kicked it or it went off. <b>Out of turn</b>: kicked a cast that was someone else's. A cast that stopped some other way (the Broodling died) still uses up that turn but isn't counted either way. <b>Backup</b> kicks on someone else's turn aren't out of turn, but that turn still counts as their miss; if everyone in a quadrant is dead, the turn goes to the backup. Left and right are as the raid sees it, facing the bosses; front melee is the tank side, past the bosses.</p>
   </div>
 
   <div class="panel">
     <div class="ph"><h2>Ravenous Feast soaks</h2><select class="scope" data-s="feast" aria-label="Pulls to show"></select></div>
     <div class="tw"><table id="feast"></table></div>
-    <p class="note">Slam 1 is group 1's, slam 2 group 2's, slam 3 group 3's. <b>Correct</b>: soaked your group's slam and the Tainted Blood after it. <b>Wrong group</b>: soaked another group's slam. <b>Missed</b>: didn't soak your group's slam, or soaked it but not the Tainted Blood. Dead players aren't counted.</p>
+    <p class="note">Slam 1 is group 1's, slam 2 group 2's, slam 3 group 3's. <b>Correct</b>: soaked your group's slam, then a Tainted Blood before the next Ravenous Feast. <b>Wrong group</b>: soaked another group's slam. <b>Missed</b>: didn't soak your group's slam, or soaked it but not the Tainted Blood. Dead players aren't counted.</p>
   </div>
 
   <div class="grid3">
@@ -255,7 +258,7 @@ $('thLight').onclick = () => setTheme('light', true); $('thDark').onclick = () =
 
 // ---- view state ----
 const SCOPES = ['map', 'venom', 'cc', 'soak', 'kicks', 'feast', 'dmg', 'heal', 'deaths'];
-const QUAD_CFG = {meleeYd: 15, flip: false};   // how Broodlings are sorted into quadrants; tuned against real logs
+const QUAD_CFG = {meleeYd: 15, frontYd: 2, flip: false};   // how Broodlings are sorted into quadrants; tuned against real logs
 const st = {scope: Object.fromEntries(SCOPES.map(k => [k, 'latest'])), ov: 'venom'};   // scope: 'latest', 'all' or a pull's key
 try { const v = JSON.parse(localStorage.getItem('fangs-view') || '{}'); if (v.ov === 'venom' || v.ov === 'ichor') st.ov = v.ov; } catch (e) {}
 const saveView = () => { try { localStorage.setItem('fangs-view', JSON.stringify({ov: st.ov})); } catch (e) {} };
@@ -293,9 +296,9 @@ async function checkSite(){
 }
 
 // ---- setup: kicker priority and soak groups, typed into fangs-setup.txt in the repo ----
-const QUADS = [['ml', 'Melee left'], ['mr', 'Melee right'], ['rl', 'Ranged left'], ['rr', 'Ranged right']];
+const QUADS = [['ml', 'Melee left'], ['fm', 'Front melee'], ['mr', 'Melee right'], ['rl', 'Ranged left'], ['rr', 'Ranged right']];
 const SETUP = {site: null, text: null, warn: []};
-const blankSetup = () => ({kick: {ml: [], mr: [], rl: [], rr: []}, feast: {}});
+const blankSetup = () => ({kick: {ml: [], fm: [], mr: [], rl: [], rr: []}, backup: [], feast: {}});
 const setup = () => SETUP.site || blankSetup();
 const fold = n => n.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, '');   // Shenron matches Shènròn
 function canon(n){   // the name as it's spelled in the roster or the logs
@@ -303,6 +306,8 @@ function canon(n){   // the name as it's spelled in the roster or the logs
   return known.find(k => fold(k) === f) || null;
 }
 const KEYS = {'meleeleft': 'ml', 'meleeright': 'mr', 'rangedleft': 'rl', 'rangedright': 'rr', 'ml': 'ml', 'mr': 'mr', 'rl': 'rl', 'rr': 'rr',
+  'leftmelee': 'ml', 'rightmelee': 'mr', 'leftranged': 'rl', 'rightranged': 'rr', 'leftrange': 'rl', 'rightrange': 'rr', 'rangeleft': 'rl', 'rangeright': 'rr',
+  'frontmelee': 'fm', 'meleefront': 'fm', 'front': 'fm', 'fm': 'fm', 'backup': 'backup', 'backupkicker': 'backup', 'backups': 'backup',
   'group1': 1, 'group2': 2, 'group3': 3, 'g1': 1, 'g2': 2, 'g3': 3};
 function parseSetup(text){
   const s = blankSetup(), warn = [];
@@ -311,12 +316,13 @@ function parseSetup(text){
     const c = line.indexOf(':');
     if (c < 0){ warn.push(`line ${i + 1} has no colon: "${line}"`); return; }
     const key = KEYS[line.slice(0, c).toLowerCase().replace(/\s+/g, '')];
-    if (!key){ warn.push(`line ${i + 1}: "${line.slice(0, c).trim()}" isn't one of melee left, melee right, ranged left, ranged right, group 1, group 2, group 3`); return; }
+    if (!key){ warn.push(`line ${i + 1}: "${line.slice(0, c).trim()}" isn't one of melee left, front melee, melee right, ranged left, ranged right, backup, group 1, group 2, group 3`); return; }
     line.slice(c + 1).split(',').map(x => x.trim()).filter(Boolean).forEach(typed => {
       const n = canon(typed);
       if (!n) warn.push(`line ${i + 1}: "${typed}" isn't on the roster`);
       const name = n || typed;
-      if (typeof key === 'string') s.kick[key].push(name);
+      if (key === 'backup') s.backup.push(name);
+      else if (typeof key === 'string') s.kick[key].push(name);
       else if (s.feast[name] && s.feast[name] !== key) warn.push(`${name} is in group ${s.feast[name]} and group ${key}; using group ${s.feast[name]}`);
       else s.feast[name] = key;
     });
@@ -346,6 +352,8 @@ function quadOf(p, pos){
   const o = q => [-q[1], -q[0]];   // world -> screen axes (right, down), north up
   const ob = o(B), or = o(p.rc), ow = o(pos), f = [ob[0] - or[0], ob[1] - or[1]], w = [ow[0] - or[0], ow[1] - or[1]];
   let left = f[0] * w[1] - f[1] * w[0] < 0; if (QUAD_CFG.flip) left = !left;
+  const fl = Math.hypot(f[0], f[1]) || 1, along = (f[0] * w[0] + f[1] * w[1]) / fl;   // yards toward the bosses from the middle of the raid
+  if (dist <= QUAD_CFG.meleeYd && along > fl + QUAD_CFG.frontYd) return 'fm';
   return (dist <= QUAD_CFG.meleeYd ? 'm' : 'r') + (left ? 'l' : 'r');
 }
 
@@ -462,8 +470,11 @@ function renderSoak(list, all){
   $('soakNote').textContent = 'Each set is the globules from one Caustic Deluge cast; a cell is how many of them the player soaked' + (list.length > 1 ? ', added up over the pulls.' : '.');
 }
 function renderKicks(list, all){
-  const s = setup(), single = list.length === 1;
-  $('kicks').innerHTML = QUADS.map(([q, label]) => {
+  const s = setup(), single = list.length === 1, backup = (s.backup || []).filter(Boolean);
+  const isBackup = n => backup.includes(n);
+  const B = {}; backup.forEach(n => { B[n] = {n, kicks: 0, covered: []}; });
+  const cards = {};
+  QUADS.forEach(([q, label]) => {
     const prio = (s.kick[q] || []).filter(Boolean);
     const rows = {}, row = n => (rows[n] ||= {n, turns: 0, ok: 0, miss: 0, out: 0});
     prio.forEach(row);
@@ -479,38 +490,51 @@ function renderKicks(list, all){
           const n = prio[sq.ptr % prio.length]; sq.ptr++;
           if (!deadAt(p, n, b.t)){ exp = n; break; }
         }
+        if (!exp && prio.length) exp = backup.find(n => !deadAt(p, n, b.t)) || null;   // everyone on the list is dead: the backup's turn
         sq.k++;
         casts++; if (b.kick) kicked++; else if (b.res === 'completed') wentOff++;
-        const counts = b.kick || b.res === 'completed';
-        let cls = b.kick ? 'ok' : b.res === 'completed' ? 'miss' : 'none';
-        if (b.kick && b.kick.by !== exp){ row(b.kick.by).out++; if (exp) cls = 'other'; }
-        if (exp && counts){ const r = row(exp); r.turns++; if (b.kick && b.kick.by === exp) r.ok++; else r.miss++; }
-        if (single) log.push(`<span class="${cls === 'ok' ? '' : cls}" title="${esc(`Cast ${sq.k} after Rouse the Brood ${ri || '?'} at ${mss(b.t)} · ${b.kick ? `kicked by ${b.kick.by}${b.kick.pet ? ' (pet)' : ''} with ${b.kick.spell} after ${b.kick.d.toFixed(2)} s` : b.res === 'completed' ? 'went off' : 'stopped some other way'}${exp ? ' · turn: ' + exp : ''}`)}">${sq.k === 1 && log.length ? '│ ' : ''}${mss(b.t)} ${esc(b.kick ? b.kick.by : b.res === 'completed' ? 'went off' : '—')}${exp && !(b.kick && b.kick.by === exp) ? ` (${esc(exp)}'s)` : ''}</span>`);
+        const counts = b.kick || b.res === 'completed', by = b.kick && b.kick.by;
+        let cls = b.kick ? 'ok' : b.res === 'completed' ? 'miss' : 'none', note = '';
+        if (by && by !== exp){
+          if (isBackup(by)){ B[by].kicks++; B[by].covered.push(exp); note = ` (backup${exp ? ' for ' + esc(exp) : ''})`; }
+          else row(by).out++;
+          if (exp) cls = 'other';
+        }
+        if (exp && counts){ const r = row(exp); r.turns++; if (by === exp) r.ok++; else r.miss++; }
+        if (single) log.push(`<span class="${cls === 'ok' ? '' : cls}" title="${esc(`Cast ${sq.k} after Rouse the Brood ${ri || '?'} at ${mss(b.t)} · ${b.kick ? `kicked by ${by}${b.kick.pet ? ' (pet)' : ''} with ${b.kick.spell} after ${b.kick.d.toFixed(2)} s` : b.res === 'completed' ? 'went off' : 'stopped some other way'}${exp ? ' · turn: ' + exp : ''}`)}">${sq.k === 1 && log.length ? '│ ' : ''}${mss(b.t)} ${esc(by || (b.res === 'completed' ? 'went off' : '—'))}${note || (exp && by !== exp ? ` (${esc(exp)}'s)` : '')}</span>`);
       });
     });
     const rs = Object.values(rows).sort((a, b) => { const ia = prio.indexOf(a.n), ib = prio.indexOf(b.n); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || b.out - a.out; });
-    const blank = prio.length ? '' : [1, 2, 3, 4].map(i => `<tr><td class="l"><span class="dim">${i}. —</span></td><td class="num dim">0</td><td class="num dim">0</td><td class="num dim">0</td><td class="num dim">0</td></tr>`).join('');
+    const nBlank = prio.length ? 0 : q === 'fm' ? 2 : 4;
+    const blank = Array.from({length: nBlank}, (_, i) => `<tr><td class="l"><span class="dim">${i + 1}. —</span></td><td class="num dim">0</td><td class="num dim">0</td><td class="num dim">0</td><td class="num dim">0</td></tr>`).join('');
     const tbl = `<div class="tw"><table><tr><th class="l fill">Kicker</th><th>Turns</th><th>Correct</th><th>Missed</th><th>Out of turn</th></tr>${rs.map(r => { const i = prio.indexOf(r.n);
       return `<tr><td class="l">${i >= 0 ? `<span class="dim">${i + 1}.</span> ` : ''}${pname(r.n)}</td><td class="num${r.turns ? '' : ' dim'}">${r.turns}</td><td class="num ${r.ok ? 'good' : 'dim'}">${r.ok}</td><td class="num ${r.miss ? 'bad' : 'dim'}">${r.miss}</td><td class="num ${r.out ? 'meh' : 'dim'}">${r.out}</td></tr>`; }).join('')}${blank}</table></div>`;
-    return `<div class="quad"><h3>${label}</h3><div class="qs">${casts} cast${casts === 1 ? '' : 's'} · ${kicked} kicked · ${wentOff} went off</div>${tbl}${single && log.length ? `<div class="clog">${log.join('')}</div>` : ''}</div>`;
-  }).join('');
+    cards[q] = `<div class="quad"><h3>${label}</h3><div class="qs">${casts} cast${casts === 1 ? '' : 's'} · ${kicked} kicked · ${wentOff} went off</div>${tbl}${single && log.length ? `<div class="clog">${log.join('')}</div>` : ''}</div>`;
+  });
+  const br = Object.values(B);
+  cards.backup = `<div class="quad"><h3>Backup</h3><div class="qs">kicks on someone else's turn</div><div class="tw"><table><tr><th class="l fill">Kicker</th><th>Kicks</th></tr>${
+    br.length ? br.map(r => `<tr><td class="l">${pname(r.n)}</td><td class="num${r.kicks ? '' : ' dim'}">${r.kicks}</td></tr>`).join('') : '<tr><td class="l dim">—</td><td class="num dim">0</td></tr>'}</table></div></div>`;
+  $('kicks').innerHTML = ['ml', 'fm', 'mr', 'rl', 'backup', 'rr'].map(k => cards[k]).join('');
   const unk = list.reduce((a, p) => a + p.brood.filter(b => !quadOf(p, b.pos)).length, 0);
   if (unk) $('kicks').insertAdjacentHTML('beforeend', `<p class="note" style="grid-column:1/-1">${unk} cast${unk === 1 ? '' : 's'} had no position to place in a quadrant.</p>`);
 }
 function renderFeast(list){
   const s = setup(), grp = s.feast || {}, any = Object.keys(grp).length > 0;
-  const P = {}, row = n => (P[n] ||= {n, ok: 0, wrong: 0, miss: 0, missTB: 0, soaks: 0});
+  const P = {}, row = n => (P[n] ||= {n, ok: 0, wrong: 0, miss: 0, missTB: 0});
   list.forEach(p => { const who = present(p);
     who.forEach(row);
-    p.feasts.forEach(f => f.slams.forEach((sl, k) => { const g = k + 1;
-      sl.hit.forEach(n => { row(n).soaks++; if (any && grp[n] !== g) row(n).wrong++; });
-      if (!any) return;
-      who.filter(n => grp[n] === g).forEach(n => { if (deadAt(p, n, sl.t)) return;
-        if (!sl.hit.includes(n)) { row(n).miss++; return; }
-        if (sl.tb != null && !deadAt(p, n, sl.tb) && !sl.tbHit.includes(n)) { row(n).miss++; row(n).missTB++; return; }
-        row(n).ok++; }); })); });
+    p.feasts.forEach((f, fi) => { const end = fi + 1 < p.feasts.length ? p.feasts[fi + 1].t : p.dur, tb = f.tb || [];
+      f.slams.forEach((sl, k) => { const g = k + 1;
+        if (!any) return;
+        sl.hit.forEach(n => { if (grp[n] !== g) row(n).wrong++; });
+        who.filter(n => grp[n] === g).forEach(n => { if (deadAt(p, n, sl.t)) return;
+          if (!sl.hit.includes(n)) { row(n).miss++; return; }
+          const got = tb.some(([t, m]) => m === n && t > sl.t && t < end);
+          if (!got){ const d = p.deaths.find(x => x[1] === n && x[0] > sl.t && x[0] < end);   // died before soaking it: not counted
+            if (!d){ row(n).miss++; row(n).missTB++; } return; }
+          row(n).ok++; }); }); }); });
   ROSTER.forEach(([n]) => row(n));   // the whole roster, so the table is there before groups or pulls exist
-  const rows = Object.values(P).sort((a, b) => (grp[a.n] || 9) - (grp[b.n] || 9) || rosterIdx(a.n) - rosterIdx(b.n) || a.n.localeCompare(b.n));
+  const rows = Object.values(P).sort((a, b) => (grp[a.n] || 9) - (grp[b.n] || 9) || byRoster(a.n, b.n));
   const v = (x, cls) => any ? `<td class="num ${x ? cls : 'dim'}">${x}</td>` : '<td class="num dim">–</td>';
   $('feast').innerHTML = `<tr><th class="l fill">Player</th><th>Group</th><th>Correct</th><th>Wrong group</th><th>Missed</th><th title="Of the missed: soaked the slam but not the Tainted Blood">Missed Tainted Blood</th></tr>` +
     rows.map(r => `<tr><td class="l">${pname(r.n)}</td><td class="num${grp[r.n] ? '' : ' dim'}">${grp[r.n] || '–'}</td>${v(r.ok, 'good')}${v(r.wrong, 'bad')}${v(r.miss, 'bad')}${v(r.missTB, 'meh')}</tr>`).join('') +

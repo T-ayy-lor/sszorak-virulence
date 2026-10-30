@@ -3,12 +3,15 @@
 # Anything after a # is ignored.
 
 # Rouse the Brood kick order: casts take turns down the list (1st cast = 1st name, 2nd = 2nd...). Dead players are skipped.
+# Front melee is the tank side, past the bosses. Backup kicks on anyone's turn without counting as out of turn.
 melee left: Jeckw, Monostereo, Calexanich
+front melee: Integralgrip, Phurry
 melee right: Daragnos, Neineimuu, Spellrift
-ranged left: Agility, Tayluor, Whispersix, Kiirelan
+ranged left: Progenesis, Tayluor, Whispersix, Kiirelan
 ranged right: Aktapewpew, Sueldh, Sighhigh, Waynegry
+backup: Zynzii
 
-# Ravenous Feast soak groups: group 1 soaks slam 1, group 2 slam 2, group 3 slam 3.
-group 1: Shenron, Zynzii, Daragnos, Monostereo, Calexanich, Agility
-group 2: Integralgrip, Phurry, Skwup, Tayluor, Whispersix, Waynegry, Jeckw
-group 3: Snakespeare, Sighhigh, Sueldh, Aktapewpew, Neineimuu, Spellrift, Kiirelan
+# Ravenous Feast soak groups: group 1 soaks first, group 2 second, group 3 third.
+group 1: Roychi, Zynzii, Daragnos, Monostereo, Calexanich, Progenesis
+group 2: Snakespeare, Sighhigh, Sueldh, Aktapewpew, Neineimuu, Spellrift, Kiirelan
+group 3: Integralgrip, Phurry, Skwup, Tayluor, Whispersix, Waynegry, Jeckw

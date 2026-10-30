@@ -54,6 +54,9 @@ input[type=number]{width:4.5em;font-family:var(--f-mono)}
 table{border-collapse:collapse;width:100%;font-size:.86rem}
 th,td{padding:6px 0 6px 18px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;width:1%}
 th:first-child,td:first-child{padding-left:0}
+th{white-space:normal;vertical-align:bottom}
+td.wr{white-space:normal;min-width:7em;width:auto}
+.tw{overflow-x:hidden}
 th.fill{width:auto}
 td.empty{border-bottom:0;padding:4px 0;width:auto;white-space:normal}
 th{font-family:var(--f-display);font-weight:600;font-size:.74rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
@@ -73,9 +76,11 @@ td.good{color:var(--ok);font-weight:600} td.bad{color:var(--crit);font-weight:60
 [hidden]{display:none!important}
 @media (max-width:600px){
   .panel{padding:12px}
-  th,td{padding-left:10px}
-  table{font-size:.82rem}
-  th{font-size:.68rem}
+  th,td{padding-left:8px}
+  table{font-size:.8rem}
+  th{font-size:.62rem;letter-spacing:.02em}
+  .quad{padding:10px}
+  .quad th:not(:first-child),.quad td:not(:first-child){padding-left:6px}
 }
 
 /* timeline */
@@ -137,7 +142,7 @@ details.setup summary span{color:var(--muted);font-weight:400}
 .setwarn{color:var(--warn);font-size:.84rem;margin:10px 0 0}
 .quads{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
 @media (max-width:1100px){.quads{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:700px){.quads{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:900px){.quads{grid-template-columns:minmax(0,1fr)}}
 .quad{border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0}
 .quad th{white-space:normal;vertical-align:bottom}
 .quad th:not(:first-child),.quad td:not(:first-child){padding-left:12px}
@@ -337,6 +342,8 @@ function renderSetup(){
 
 // ---- helpers over a pull ----
 const deadAt = (p, n, t) => p.deaths.some(d => d[1] === n && d[0] <= t && (d[3] == null || d[3] > t));
+const SRC_NAME = {'Caustic Globule burst (unsoaked)': 'Unsoaked globule burst', 'Caustic Deluge (falling globule)': 'Falling globule'};
+const srcName = s => SRC_NAME[s] || s;
 const byRoster = (a, b) => rosterIdx(a) - rosterIdx(b) || a.localeCompare(b);
 const people = list => list.length ? [...new Set(list.flatMap(p => present(p)))].sort(byRoster) : ROSTER.map(r => r[0]);
 const present = p => { const s = new Set([...Object.keys(p.dmg || {}), ...Object.keys(p.heal || {}), ...p.deaths.map(d => d[1])]); return [...s]; };
@@ -385,7 +392,7 @@ function renderMap(viewAll, list, all){
       const tip = `<b>Caustic Globule burst</b><br>nobody soaked it<br>${when(p, g.rupt)} · set ${g.set}`;
       marks += `<g ${at(x, y)} data-tip="${esc(tip)}" opacity=".9"><circle r="10" fill="transparent"/><path d="M-6 -6L6 6M6 -6L-6 6" stroke="#000" stroke-width="4.5" stroke-linecap="round"/><path d="M-6 -6L6 6M6 -6L-6 6" stroke="#ff5a4a" stroke-width="2.2" stroke-linecap="round"/></g>`; }));
     list.forEach(p => p.venom.forEach(v => { if (v.ok || !v.pos) return; const [x, y] = fit(v.pos);
-      marks += dot(x, y, color(v.n), `<b style="color:${color(v.n)}">${esc(v.n)}</b><br>${esc(v.src)}<br>stack ${v.st} · ${when(p, v.t)}`); }));
+      marks += dot(x, y, color(v.n), `<b style="color:${color(v.n)}">${esc(v.n)}</b><br>${esc(srcName(v.src))}<br>stack ${v.st} · ${when(p, v.t)}`); }));
   }
   if (fit && st.ov === 'ichor'){
     list.forEach(p => p.ichor.forEach(v => { if (!v.pos) return; const [x, y] = fit(v.pos);
@@ -418,17 +425,17 @@ function renderVenom(list, all){
   const el = $('venomT');
   if (list.length === 1){
     const p = list[0], ev = p.venom.filter(v => !v.ok).sort((a, b) => a.t - b.t);
-    el.innerHTML = `<tr><th>Time</th><th class="l fill">Player</th><th>Stack</th><th class="l">Source</th></tr>` +
-      ev.map(v => `<tr><td class="num">${mss(v.t)}</td><td class="l">${pname(v.n)}</td><td class="num">${v.st}</td><td class="l">${esc(v.src)}</td></tr>`).join('') +
+    el.innerHTML = `<tr><th>Time</th><th class="l">Player</th><th>Stack</th><th class="l fill">Source</th></tr>` +
+      ev.map(v => `<tr><td class="num">${mss(v.t)}</td><td class="l">${pname(v.n)}</td><td class="num">${v.st}</td><td class="l wr">${esc(srcName(v.src))}</td></tr>`).join('') +
       Array.from({length: Math.max(0, 3 - ev.length)}, () => `<tr><td class="num dim">–</td><td class="l dim">—</td><td class="num dim">–</td><td class="l dim">–</td></tr>`).join('');
     return;
   }
   const P = {};
   people(list).forEach(n => { P[n] = {n, c: 0, src: {}}; });
-  list.forEach(p => p.venom.forEach(v => { if (v.ok) return; const q = (P[v.n] ||= {n: v.n, c: 0, src: {}}); q.c++; q.src[v.src] = (q.src[v.src] || 0) + 1; }));
+  list.forEach(p => p.venom.forEach(v => { if (v.ok) return; const q = (P[v.n] ||= {n: v.n, c: 0, src: {}}); q.c++; const sn = srcName(v.src); q.src[sn] = (q.src[sn] || 0) + 1; }));
   const rows = Object.values(P).sort((a, b) => b.c - a.c || byRoster(a.n, b.n));
-  el.innerHTML = `<tr><th class="l fill">Player</th><th>Stacks</th><th class="l">Sources</th></tr>` +
-    rows.map(r => `<tr><td class="l">${pname(r.n)}</td><td class="num ${r.c ? 'bad' : 'dim'}">${r.c}</td><td class="l dim">${esc(Object.entries(r.src).sort((a, b) => b[1] - a[1]).map(([s, c]) => c > 1 ? `${s} ×${c}` : s).join(', '))}</td></tr>`).join('');
+  el.innerHTML = `<tr><th class="l">Player</th><th>Stacks</th><th class="l fill">Sources</th></tr>` +
+    rows.map(r => `<tr><td class="l">${pname(r.n)}</td><td class="num ${r.c ? 'bad' : 'dim'}">${r.c}</td><td class="l dim wr">${esc(Object.entries(r.src).sort((a, b) => b[1] - a[1]).map(([s, c]) => c > 1 ? `${s} ×${c}` : s).join(', '))}</td></tr>`).join('');
 }
 
 // ---- timeline: one row per raid night, 8:30-11:30 PM ----

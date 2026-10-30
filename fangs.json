@@ -1,0 +1,14 @@
+{
+ "nights": [
+  {
+   "file": "fangs-nights/WoWCombatLog-102926_203851.json",
+   "log": "WoWCombatLog-102926_203851.txt",
+   "date": "10/29/2026",
+   "diff": 16,
+   "pulls": 1,
+   "kill": false,
+   "best": 1.0,
+   "updated": "2026-10-30T00:58:38+00:00"
+  }
+ ]
+}

@@ -339,11 +339,17 @@ class FangsParser:
     (Caustic Deluge sets, soakers, CC, where they ruptured), Coiling Ichor drops, Visceral Burst kicks,
     Ravenous Feast / Tainted Blood hits, damage, healing and deaths."""
     BOSSES = {'257361': 'Vexhul', '257368': 'Ithraz'}
-    VENOM, GLOBULE, DELUGE = '1290336', '1289993', '1289192'
-    EMERGENCE, SPIT, ICHOR = '1291404', '1291478', '1290809'
+    # IDs as the combat log records them (several differ from the Encounter Journal's)
+    VENOM, DELUGE = '1290336', '1289192'
+    SOAK, RUPTURE, DROP = '1289201', '1290338', '1289994'   # walking into a globule / an unsoaked globule bursting on the raid / a falling globule
+    GLOB_NPC = '-269194-'                                      # Barbed Bulwark: the globule (its 1303378 shield comes off when it's CC'd)
+    ICHORS = ('1290814', '1290809')                            # Coiling Ichor debuff on the player (and the boss's cast ID)
     BULWARK, ROUSE, BURST = '1303378', '1308356', '1308385'
     FEAST, TAINTED = '1290516', '1310099'
-    OK_VENOM = {GLOBULE: 'Caustic Globule', EMERGENCE: 'Venomous Emergence', SPIT: 'Corrosive Spit'}
+    OK_VENOM = {'1289201': 'Caustic Globule', '1308122': 'Venomous Emergence', '1291404': 'Venomous Emergence',
+                '1293295': 'Corrosive Spit', '1293979': 'Corrosive Spit', '1291478': 'Corrosive Spit'}
+    NOT_CAUSE = {'1290480', '1290336', '1308482', '1303235', '1294976'}   # Eternal Venom's own ticks, Rouse the Brood, Blood Torrent, Toxic Fumes
+    LABEL = {'1290338': 'Caustic Globule burst (unsoaked)', '1289994': 'Caustic Deluge (falling globule)'}
     # CC auras (cast ID / applied aura ID where they differ) from the raid's classes
     CC = {'221562': 'Asphyxiate', '207167': 'Blinding Sleet', '46968': 'Shockwave', '132168': 'Shockwave', '107570': 'Storm Bolt',
           '132169': 'Storm Bolt', '5246': 'Intimidating Shout', '179057': 'Chaos Nova', '1234195': 'Void Nova', '217832': 'Imprison',
@@ -354,7 +360,8 @@ class FangsParser:
           '99': 'Incapacitating Roar', '33786': 'Cyclone', '109248': 'Binding Shot', '117526': 'Binding Shot', '19577': 'Intimidation',
           '24394': 'Intimidation', '187650': 'Freezing Trap', '3355': 'Freezing Trap', '213691': 'Scatter Shot', '31661': "Dragon's Breath",
           '118': 'Polymorph', '113724': 'Ring of Frost', '82691': 'Ring of Frost', '30283': 'Shadowfury', '5484': 'Howl of Terror',
-          '5782': 'Fear', '118699': 'Fear', '6789': 'Mortal Coil', '89766': 'Axe Toss'}
+          '5782': 'Fear', '118699': 'Fear', '6789': 'Mortal Coil', '89766': 'Axe Toss',
+          '427773': 'Blind', '1258508': 'Intimidation', '20549': 'War Stomp'}
 
     def __init__(self):
         self.pulls, self.cur, self.leftover = [], None, ''
@@ -388,7 +395,7 @@ class FangsParser:
         self.cur = dict(enc=r[1], encName=r[2], t0=Parser.ts(l), clock=when[1][:8].split('.')[0], date=when[0], diff=int(r[3]),
                         twin='twin fangs' in r[2].lower(), dur=0.0, kill=False, ended=False, lastT=0.0,
                         track={}, ctrack={}, specGuid={}, died=[], dmg={}, heal={}, hp={},
-                        hits={}, stacks={}, venom=[], deluges=[], rouses=[], glob={}, globHits=[], cc=[], bulwark=set(),
+                        hits={}, stacks={}, venom=[], deluges=[], rouses=[], glob={}, soaks=[], bursts=[], cc=[], bulwark=set(),
                         ichor={}, ichorOut=[], casts=[], open={}, feasts=[], feastHits=[], tainted=[])
 
     def close(self, r):
@@ -432,6 +439,9 @@ class FangsParser:
         if not c['twin'] and any(('-' + k + '-') in src or ('-' + k + '-') in dst for k in self.BOSSES): c['twin'] = True
         swing = ev.startswith('SWING_')
         sid = '' if swing else r[9]
+        for g in (src, dst):                       # when each globule was first and last seen
+            if self.GLOB_NPC in g:
+                gl = c['glob'].setdefault(g, {'first': t, 'last': t}); gl['last'] = t
         if ev == 'SPELL_SUMMON':
             o = self.owner(src)
             if o: self.pets[dst] = o
@@ -455,6 +465,8 @@ class FangsParser:
             except ValueError: pass
         # ---- auras
         if ev.startswith('SPELL_AURA'):
+            if ev == 'SPELL_AURA_APPLIED' and sid in self.OK_VENOM and dst.startswith('Player-') and not src.startswith('Player-'):
+                c['hits'].setdefault(dst, []).append((t, sid, r[10]))      # Corrosive Spit's debuff marks its target
             if sid == self.VENOM and dst.startswith('Player-'):
                 prev = c['stacks'].get(dst, 0)
                 if ev == 'SPELL_AURA_APPLIED': n = 1
@@ -465,7 +477,7 @@ class FangsParser:
                 c['stacks'][dst] = n
                 if n > prev:
                     c['venom'].append({'t': t, 'g': dst, 'n': n, 'auraSrc': r[2]})
-            elif sid == self.ICHOR and dst.startswith('Player-'):
+            elif sid in self.ICHORS and dst.startswith('Player-'):
                 if ev == 'SPELL_AURA_APPLIED': c['ichor'][dst] = t
                 elif ev == 'SPELL_AURA_REMOVED':
                     on = c['ichor'].pop(dst, None); c['ichorOut'].append({'g': dst, 'on': on, 'off': t})
@@ -480,7 +492,6 @@ class FangsParser:
             if sid == self.DELUGE and ev == 'SPELL_CAST_SUCCESS': c['deluges'].append(t)
             elif sid == self.ROUSE and ev == 'SPELL_CAST_SUCCESS': c['rouses'].append(t)
             elif sid == self.FEAST and ev == 'SPELL_CAST_START': c['feasts'].append(t)
-            elif sid == self.GLOBULE and not src.startswith('Player-'): c['glob'].setdefault(src, {'first': t})
             if sid == self.BURST and ev == 'SPELL_CAST_START':
                 cast = {'t': t, 'src': src, 'kick': None, 'res': None}
                 c['casts'].append(cast); c['open'][src] = cast
@@ -503,7 +514,8 @@ class FangsParser:
         if ev.endswith('_DAMAGE') or ev.endswith('_MISSED'):
             if dst.startswith('Player-') and not src.startswith('Player-'):
                 c['hits'].setdefault(dst, []).append((t, sid, 'Melee' if swing else r[10]))
-                if sid == self.GLOBULE: c['globHits'].append((t, src, dst))
+                if sid == self.SOAK: c['soaks'].append((t, dst))
+                elif sid == self.RUPTURE: c['bursts'].append((t, dst))
                 elif sid == self.FEAST: c['feastHits'].append((t, dst))
                 elif sid == self.TAINTED: c['tainted'].append((t, dst))
             if ev.endswith('_DAMAGE'):
@@ -548,41 +560,33 @@ class FangsParser:
                 q = prior[-1] if prior else (tr[0] if tr else None)
                 return [round(q[1], 2), round(q[2], 2)] if q else None
             setno = lambda t: sum(1 for d in p['deluges'] if d <= t + 0.5)
-            # Eternal Venom stacks and what caused each one
+            # Eternal Venom stacks and what caused each one: the hit that landed with the stack
             venom = []
             for v in p['venom']:
-                recent = [h for h in p['hits'].get(v['g'], []) if -0.3 <= v['t'] - h[0] <= 1.0]
-                okh = [h for h in recent if h[1] in self.OK_VENOM]
+                around = [h for h in p['hits'].get(v['g'], []) if -0.35 <= v['t'] - h[0] <= 0.5]
+                cause = [h for h in around if h[1] not in self.NOT_CAUSE]
+                okh = [h for h in cause if h[1] in self.OK_VENOM]
                 near = lambda hs: min(hs, key=lambda h: abs(v['t'] - h[0]))
                 if okh: src, ok = self.OK_VENOM[near(okh)[1]], True
-                elif recent: src, ok = near(recent)[2], False
-                else: src, ok = (v['auraSrc'] if v['auraSrc'] not in ('nil', '') else 'Unknown'), False
+                elif cause: h = near(cause); src, ok = self.LABEL.get(h[1], h[2].strip('"')), False
+                elif any(h[1] == '1294976' for h in around): src, ok = 'Toxic Fumes', False
+                else: src, ok = 'Unknown', False
                 venom.append({'t': round(v['t'], 2), 'n': nm(v['g']), 'st': v['n'], 'src': src, 'ok': ok, 'pos': pos(v['g'], v['t'])})
-            # Caustic Globules: each globule's burst, who soaked it, where it ruptured, who CC'd it
-            bursts = []                       # one burst per globule rupture: its damage hits arrive within a few seconds
-            for t, src, dst in sorted(p['globHits']):
-                b = next((b for b in reversed(bursts) if b['src'] == src and t - b['t'] <= 3.0), None)
-                if not b:
-                    b = {'t': t, 'src': src, 'soak': set()}; bursts.append(b)
-                b['soak'].add(dst)
-            boss = lambda g: any('-' + k + '-' in g for k in self.BOSSES)
-            globules, seen = [], set()
-            for i, b in enumerate(bursts):
-                g = b['src']
-                spots = [q for q in (pos(s, b['t']) for s in b['soak']) if q]
-                at = None if boss(g) else cpos(g, b['t'])
-                if not at and spots: at = [round(sum(q[0] for q in spots) / len(spots), 2), round(sum(q[1] for q in spots) / len(spots), 2)]
-                born = p['glob'].get(g, {}).get('first')
-                if born is None and p['ctrack'].get(g) and not boss(g): born = p['ctrack'][g][0][0]
-                cc = [] if boss(g) else [[round(t, 2), nm(o), sp] for t, o, d, sp in p['cc'] if d == g]
-                seen.add(g)
-                globules.append({'id': g.rsplit('-', 1)[-1] + ('' if not boss(g) else f'#{i}'), 'set': setno(born if born is not None else b['t']),
-                                 'rupt': round(b['t'], 2), 'pos': at, 'soak': sorted(nm(s) for s in b['soak']), 'cc': cc})
-            for g in (set(p['bulwark']) | set(p['glob']) | {d for _, _, d, _ in p['cc'] if d in p['bulwark'] or d in p['glob']}) - seen:
-                born = p['glob'].get(g, {}).get('first') or (p['ctrack'][g][0][0] if p['ctrack'].get(g) else 0)
-                globules.append({'id': g.rsplit('-', 1)[-1], 'set': setno(born), 'rupt': None, 'pos': None, 'soak': [],
-                                 'cc': [[round(t, 2), nm(o), sp] for t, o, d, sp in p['cc'] if d == g]})
-            globules.sort(key=lambda x: (x['rupt'] is None, x['rupt'] or 0))
+            # Caustic Globules (Barbed Bulwark NPCs): set, who soaked each, which burst on the raid unsoaked and where, who CC'd it
+            gl = p['glob']
+            info = {g: {'id': g.rsplit('-', 1)[-1], 'set': setno(d['first']), 'born': round(d['first'], 2), 'end': round(d['last'], 2),
+                        'rupt': None, 'pos': None, 'soak': [], 'cc': [[round(t, 2), nm(o), sp] for t, o, d2, sp in p['cc'] if d2 == g]}
+                    for g, d in gl.items()}
+            bursts = []                       # an unsoaked globule bursts on the whole raid at once (hits within 0.25 s), about 10.8 s after it landed
+            for t, _ in sorted(p['bursts']):
+                if not bursts or t - bursts[-1] > 0.25: bursts.append(t)
+            for bt in bursts:                 # the globule that landed about 10.8 s before (its Barbed Bulwark marks where it is)
+                cand = [g for g in info if info[g]['rupt'] is None and abs(gl[g]['first'] + 10.8 - bt) <= 0.7]
+                g = min(cand, key=lambda g: abs(gl[g]['first'] + 10.8 - bt)) if cand else None
+                if g: info[g]['rupt'] = round(bt, 2); info[g]['pos'] = cpos(g, gl[g]['first'] + 0.5)
+                else: info['burst%d' % len(info)] = {'id': '', 'set': setno(bt - 10.8), 'born': None, 'end': None, 'rupt': round(bt, 2), 'pos': None, 'soak': [], 'cc': []}
+            soaks = [[round(t, 2), nm(d), setno(t)] for t, d in sorted(p['soaks'])]   # each soak hit is one globule walked into
+            globules = sorted(info.values(), key=lambda x: x['born'] if x['born'] is not None else (x['rupt'] or 0) - 10.8)
             # Coiling Ichor: where each player stood when it ran out
             died = {}
             for t, g in p['died']: died.setdefault(g, t)
@@ -634,7 +638,7 @@ class FangsParser:
                         'dur': round(stop, 1), 'kill': p['kill'], 'live': not p['ended'], 'hp': {k: round(v, 4) for k, v in p['hp'].items()},
                         'deaths': deaths, 'bpos': bpos, 'rc': rc,
                         'deluges': [round(t, 2) for t in p['deluges']], 'rouses': [round(t, 2) for t in p['rouses']],
-                        'venom': venom, 'stacks': stacks_max, 'globules': globules, 'ichor': ichor, 'brood': brood, 'feasts': feasts,
+                        'venom': venom, 'stacks': stacks_max, 'globules': globules, 'soaks': soaks, 'ichor': ichor, 'brood': brood, 'feasts': feasts,
                         'dmg': {nm(g): round(v) for g, v in p['dmg'].items()}, 'heal': {nm(g): round(v) for g, v in p['heal'].items()}})
         return {'log': log_name, 'updated': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'pulls': out, 'specs': dict(self.specs)}
 
@@ -848,7 +852,7 @@ def write_setup(cfg):
              "# Names are separated by commas. Capitals and accents don't matter (Shenron = Shènròn).",
              '# Anything after a # is ignored.', '',
              '# Rouse the Brood kick order: casts take turns down the list (1st cast = 1st name, 2nd = 2nd...). Dead players are skipped.',
-             "# Front melee is the tank side, past the bosses. Backup kicks on anyone's turn without counting as out of turn."]
+             "# Front melee is between the two bosses. Backup kicks on anyone's turn without counting as out of turn."]
     lines += [f'{k}: {", ".join(cfg.get(k, []))}' for k, _ in QKEYS] + [f'backup: {", ".join(cfg.get("backup", []))}', '',
               '# Ravenous Feast soak groups: group 1 soaks first, group 2 second, group 3 third.']
     lines += [f'group {g}: {", ".join(cfg.get(f"group {g}", []))}' for g in (1, 2, 3)]

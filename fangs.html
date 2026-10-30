@@ -197,7 +197,7 @@ details.setup summary span{color:var(--muted);font-weight:400}
   <div class="panel">
     <div class="ph"><h2>Rouse the Brood kicks</h2><select class="scope" data-s="kicks" aria-label="Pulls to show"></select></div>
     <div class="quads" id="kicks"></div>
-    <p class="note">Each Rouse the Brood starts every quadrant's kick order over: the first Visceral Burst is player 1's turn, the next is player 2's, and so on. Anyone dead when a cast starts is skipped, so their turn passes to the next player instead of counting against anyone. <b>Correct</b>: kicked on their turn. <b>Missed</b>: their turn, but someone else kicked it or it went off. <b>Out of turn</b>: kicked a cast that was someone else's. A cast that stopped some other way (the Broodling died) still uses up that turn but isn't counted either way. <b>Backup</b> kicks on someone else's turn aren't out of turn, but that turn still counts as their miss; if everyone in a quadrant is dead, the turn goes to the backup. Left and right are as the raid sees it, facing the bosses; front melee is the tank side, past the bosses.</p>
+    <p class="note">Each Rouse the Brood starts every quadrant's kick order over: the first Visceral Burst is player 1's turn, the next is player 2's, and so on. Anyone dead when a cast starts is skipped, so their turn passes to the next player instead of counting against anyone. <b>Correct</b>: kicked on their turn. <b>Missed</b>: their turn, but someone else kicked it or it went off. <b>Out of turn</b>: kicked a cast that was someone else's. A cast that stopped some other way (the Broodling died) still uses up that turn but isn't counted either way. <b>Backup</b> kicks on someone else's turn aren't out of turn, but that turn still counts as their miss; if everyone in a quadrant is dead, the turn goes to the backup. Left and right are as the raid sees it, facing the bosses; front melee is between the two bosses.</p>
   </div>
 
   <div class="panel">
@@ -258,7 +258,7 @@ $('thLight').onclick = () => setTheme('light', true); $('thDark').onclick = () =
 
 // ---- view state ----
 const SCOPES = ['map', 'venom', 'cc', 'soak', 'kicks', 'feast', 'dmg', 'heal', 'deaths'];
-const QUAD_CFG = {meleeYd: 15, frontYd: 2, flip: false};   // how Broodlings are sorted into quadrants; tuned against real logs
+const QUAD_CFG = {meleeYd: 15, frontYd: 11, flip: false};   // bosses stand about 16 yd either side of the middle   // how Broodlings are sorted into quadrants; tuned against real logs
 const st = {scope: Object.fromEntries(SCOPES.map(k => [k, 'latest'])), ov: 'venom'};   // scope: 'latest', 'all' or a pull's key
 try { const v = JSON.parse(localStorage.getItem('fangs-view') || '{}'); if (v.ov === 'venom' || v.ov === 'ichor') st.ov = v.ov; } catch (e) {}
 const saveView = () => { try { localStorage.setItem('fangs-view', JSON.stringify({ov: st.ov})); } catch (e) {} };
@@ -352,8 +352,8 @@ function quadOf(p, pos){
   const o = q => [-q[1], -q[0]];   // world -> screen axes (right, down), north up
   const ob = o(B), or = o(p.rc), ow = o(pos), f = [ob[0] - or[0], ob[1] - or[1]], w = [ow[0] - or[0], ow[1] - or[1]];
   let left = f[0] * w[1] - f[1] * w[0] < 0; if (QUAD_CFG.flip) left = !left;
-  const fl = Math.hypot(f[0], f[1]) || 1, along = (f[0] * w[0] + f[1] * w[1]) / fl;   // yards toward the bosses from the middle of the raid
-  if (dist <= QUAD_CFG.meleeYd && along > fl + QUAD_CFG.frontYd) return 'fm';
+  const fl = Math.hypot(f[0], f[1]) || 1, side = Math.abs(f[0] * w[1] - f[1] * w[0]) / fl;   // yards off the line from the raid to the bosses
+  if (dist <= QUAD_CFG.meleeYd && side <= QUAD_CFG.frontYd) return 'fm';   // between the two bosses
   return (dist <= QUAD_CFG.meleeYd ? 'm' : 'r') + (left ? 'l' : 'r');
 }
 
@@ -382,7 +382,7 @@ function renderMap(viewAll, list, all){
   let marks = '';
   if (fit && st.ov === 'venom'){
     list.forEach(p => p.globules.forEach(g => { if (!g.pos || g.rupt == null) return; const [x, y] = fit(g.pos);
-      const tip = `<b>Caustic Globule ruptured</b><br>${when(p, g.rupt)} · set ${g.set}<br>${g.soak.length ? 'Soaked by ' + g.soak.map(esc).join(', ') : 'Nobody soaked it'}`;
+      const tip = `<b>Caustic Globule burst</b><br>nobody soaked it<br>${when(p, g.rupt)} · set ${g.set}`;
       marks += `<g ${at(x, y)} data-tip="${esc(tip)}" opacity=".9"><circle r="10" fill="transparent"/><path d="M-6 -6L6 6M6 -6L-6 6" stroke="#000" stroke-width="4.5" stroke-linecap="round"/><path d="M-6 -6L6 6M6 -6L-6 6" stroke="#ff5a4a" stroke-width="2.2" stroke-linecap="round"/></g>`; }));
     list.forEach(p => p.venom.forEach(v => { if (v.ok || !v.pos) return; const [x, y] = fit(v.pos);
       marks += dot(x, y, color(v.n), `<b style="color:${color(v.n)}">${esc(v.n)}</b><br>${esc(v.src)}<br>stack ${v.st} · ${when(p, v.t)}`); }));
@@ -396,7 +396,7 @@ function renderMap(viewAll, list, all){
   $('ovSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.ov === st.ov)));
   const dotI = '<svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5" fill="var(--muted)"/></svg>';
   $('mapKey').innerHTML = st.ov === 'venom'
-    ? `<span>${dotI}where a player took an unnecessary stack</span><span><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2L10 10M10 2L2 10" stroke="#ff5a4a" stroke-width="2.2" stroke-linecap="round"/></svg>Caustic Globule ruptured</span><span>hover a mark for details</span>`
+    ? `<span>${dotI}where a player took an unnecessary stack</span><span><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2L10 10M10 2L2 10" stroke="#ff5a4a" stroke-width="2.2" stroke-linecap="round"/></svg>Caustic Globule burst (unsoaked)</span><span>hover a mark for details</span>`
     : `<span>${dotI}where a player's Coiling Ichor dropped</span><span>hover a dot for who and when</span>`;
   $('mapNote').textContent = FMAP.ppy ? '' : 'Positions are fitted to where people stood until the map is calibrated against a real pull.';
 }
@@ -462,8 +462,8 @@ function renderCC(list){
 }
 function renderSoak(list, all){
   // one column per Caustic Deluge set; a cell is how many of that set's globules the player soaked (summed over the shown pulls)
-  const sets = Math.max(list.length ? 1 : 3, ...list.map(p => Math.max(p.deluges.length, ...p.globules.map(g => g.set), 0)));
-  const cnt = (n, k) => list.reduce((a, p) => a + p.globules.filter(g => g.set === k && g.soak.includes(n)).length, 0);
+  const sets = Math.max(list.length ? 1 : 3, ...list.map(p => Math.max(p.deluges.length, ...(p.soaks || []).map(x => x[2]), 0)));
+  const cnt = (n, k) => list.reduce((a, p) => a + (p.soaks || []).filter(x => x[2] === k && x[1] === n).length, 0);
   const ks = Array.from({length: sets}, (_, i) => i + 1);
   $('soak').innerHTML = `<tr><th class="l fill">Player</th>${ks.map(k => `<th>Set ${k}</th>`).join('')}</tr>` +
     people(list).map(n => `<tr><td class="l">${pname(n)}</td>${ks.map(k => { const v = cnt(n, k); return `<td class="num${v ? '' : ' dim'}">${v}</td>`; }).join('')}</tr>`).join('');

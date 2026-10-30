@@ -263,7 +263,7 @@ $('thLight').onclick = () => setTheme('light', true); $('thDark').onclick = () =
 
 // ---- view state ----
 const SCOPES = ['map', 'venom', 'cc', 'soak', 'kicks', 'feast', 'dmg', 'heal', 'deaths'];
-const QUAD_CFG = {meleeYd: 15, frontYd: 11, flip: false};   // bosses stand about 16 yd either side of the middle   // how Broodlings are sorted into quadrants; tuned against real logs
+const QUAD_CFG = {meleeYd: 25, frontYd: 11, flip: false};   // bosses stand about 16 yd either side of the middle   // how Broodlings are sorted into quadrants; tuned against real logs
 const st = {scope: Object.fromEntries(SCOPES.map(k => [k, 'latest'])), ov: 'venom'};   // scope: 'latest', 'all' or a pull's key
 try { const v = JSON.parse(localStorage.getItem('fangs-view') || '{}'); if (v.ov === 'venom' || v.ov === 'ichor') st.ov = v.ov; } catch (e) {}
 const saveView = () => { try { localStorage.setItem('fangs-view', JSON.stringify({ov: st.ov})); } catch (e) {} };

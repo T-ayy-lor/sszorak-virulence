@@ -345,10 +345,12 @@ class FangsParser:
     GLOB_NPC = '-269194-'                                      # Barbed Bulwark: the globule (its 1303378 shield comes off when it's CC'd)
     ICHORS = ('1290814', '1290809')                            # Coiling Ichor debuff on the player (and the boss's cast ID)
     BULWARK, ROUSE, BURST = '1303378', '1308356', '1308385'
-    FEAST, TAINTED = '1290516', '1310099'
+    FEAST, FEAST_HITS = '1290516', ('1290662', '1290516')   # the cast, and the slam's damage
+    TAINTED = ('1310102', '1310099')                          # Tainted Blood: a debuff re-applied while standing in it (and the journal's ID)
     OK_VENOM = {'1289201': 'Caustic Globule', '1308122': 'Venomous Emergence', '1291404': 'Venomous Emergence',
                 '1293295': 'Corrosive Spit', '1293979': 'Corrosive Spit', '1291478': 'Corrosive Spit'}
-    NOT_CAUSE = {'1290480', '1290336', '1308482', '1303235', '1294976'}   # Eternal Venom's own ticks, Rouse the Brood, Blood Torrent, Toxic Fumes
+    NOT_CAUSE = {'1290480', '1290336', '1308482', '1303235', '1294976', '1310102', '1310099', '1310096', '1303230', '1289192'}
+    # ^ Eternal Venom itself, Rouse the Brood, Blood Torrent, Toxic Fumes, Tainted Blood, Feasted, the tank's Caustic Deluge debuff
     LABEL = {'1290338': 'Caustic Globule burst (unsoaked)', '1289994': 'Caustic Deluge (falling globule)'}
     # CC auras (cast ID / applied aura ID where they differ) from the raid's classes
     CC = {'221562': 'Asphyxiate', '207167': 'Blinding Sleet', '46968': 'Shockwave', '132168': 'Shockwave', '107570': 'Storm Bolt',
@@ -361,7 +363,18 @@ class FangsParser:
           '24394': 'Intimidation', '187650': 'Freezing Trap', '3355': 'Freezing Trap', '213691': 'Scatter Shot', '31661': "Dragon's Breath",
           '118': 'Polymorph', '113724': 'Ring of Frost', '82691': 'Ring of Frost', '30283': 'Shadowfury', '5484': 'Howl of Terror',
           '5782': 'Fear', '118699': 'Fear', '6789': 'Mortal Coil', '89766': 'Axe Toss',
-          '427773': 'Blind', '1258508': 'Intimidation', '20549': 'War Stomp'}
+          '427773': 'Blind', '1258508': 'Intimidation', '20549': 'War Stomp', '198909': 'Song of Chi-Ji', '116844': 'Ring of Peace',
+          '108194': 'Asphyxiate', '91800': 'Gnaw', '91797': 'Monstrous Blow', '47476': 'Strangulate', '102359': 'Mass Entanglement', '339': 'Entangling Roots',
+          '2637': 'Hibernate', '22570': 'Maim', '163505': 'Rake', '61391': 'Typhoon', '127797': "Ursol's Vortex", '102793': "Ursol's Vortex",
+          '355689': 'Landslide', '368970': 'Tail Swipe', '357214': 'Wing Buffet', '372245': 'Terror of the Skies', '236777': 'High Explosive Trap',
+          '462031': 'Implosive Trap', '162480': 'Steel Trap', '122': 'Frost Nova', '157981': 'Blast Wave', '157997': 'Ice Nova', '28272': 'Polymorph',
+          '28271': 'Polymorph', '61305': 'Polymorph', '61721': 'Polymorph', '61780': 'Polymorph', '126819': 'Polymorph', '161353': 'Polymorph',
+          '161354': 'Polymorph', '161355': 'Polymorph', '161372': 'Polymorph', '277787': 'Polymorph', '277792': 'Polymorph', '321395': 'Polymorph',
+          '391622': 'Polymorph', '10326': 'Turn Evil', '605': 'Mind Control', '9484': 'Shackle Undead', '200200': 'Holy Word: Chastise',
+          '200196': 'Holy Word: Chastise', '226943': 'Mind Bomb', '205369': 'Mind Bomb', '210873': 'Hex', '211004': 'Hex', '211010': 'Hex', '211015': 'Hex',
+          '269352': 'Hex', '277778': 'Hex', '277784': 'Hex', '309328': 'Hex', '64695': 'Earthgrab', '51490': 'Thunderstorm', '305485': 'Lightning Lasso',
+          '197214': 'Sundering', '118345': 'Pulverize', '710': 'Banish', '6358': 'Seduction', '261589': 'Seduction', '1122': 'Summon Infernal',
+          '22703': 'Infernal Awakening', '107079': 'Quaking Palm', '287712': 'Haymaker', '255723': 'Bull Rush', '202244': 'Overrun', '204490': 'Sigil of Silence'}
 
     def __init__(self):
         self.pulls, self.cur, self.leftover = [], None, ''
@@ -465,8 +478,11 @@ class FangsParser:
             except ValueError: pass
         # ---- auras
         if ev.startswith('SPELL_AURA'):
-            if ev == 'SPELL_AURA_APPLIED' and sid in self.OK_VENOM and dst.startswith('Player-') and not src.startswith('Player-'):
-                c['hits'].setdefault(dst, []).append((t, sid, r[10]))      # Corrosive Spit's debuff marks its target
+            if sid in self.TAINTED and ev in ('SPELL_AURA_APPLIED', 'SPELL_AURA_REFRESH', 'SPELL_AURA_APPLIED_DOSE') and dst.startswith('Player-'):
+                tl = c['tainted']
+                if not any(g == dst and t - t2 < 1.0 for t2, g in tl[-30:]): tl.append((t, dst))   # one entry per second is plenty
+            if ev == 'SPELL_AURA_APPLIED' and dst.startswith('Player-') and not src.startswith('Player-') and sid not in self.NOT_CAUSE:
+                c['hits'].setdefault(dst, []).append((t, sid, r[10]))      # boss debuffs can cause a stack too (Corrosive Spit's mark, Stir the Depths)
             if sid == self.VENOM and dst.startswith('Player-'):
                 prev = c['stacks'].get(dst, 0)
                 if ev == 'SPELL_AURA_APPLIED': n = 1
@@ -516,8 +532,8 @@ class FangsParser:
                 c['hits'].setdefault(dst, []).append((t, sid, 'Melee' if swing else r[10]))
                 if sid == self.SOAK: c['soaks'].append((t, dst))
                 elif sid == self.RUPTURE: c['bursts'].append((t, dst))
-                elif sid == self.FEAST: c['feastHits'].append((t, dst))
-                elif sid == self.TAINTED: c['tainted'].append((t, dst))
+                elif sid in self.FEAST_HITS: c['feastHits'].append((t, dst))
+                elif sid in self.TAINTED: c['tainted'].append((t, dst))
             if ev.endswith('_DAMAGE'):
                 try: val = float(r[k + 19]) - max(float(r[k + 21]), 0) + max(float(r[k + 25]), 0)
                 except (ValueError, IndexError): val = 0.0

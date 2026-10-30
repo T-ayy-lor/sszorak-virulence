@@ -26,6 +26,14 @@
   --bg:#121113; --panel:#19181a; --ink:#ebe8ea; --muted:#a19ba0; --line:#302d30;
   --accent:#ec8ab8; --typeA:#f0a33a; --typeB:#a98cf2; --boom:#ff5a4c; --warn:#e5b04a; --warn-bg:#3a2e14; --crit:#ff6b5e; --crit-bg:#3d1c19; --ok:#5cc28a;
   --ccp:100%; color-scheme:dark}
+/* clicking Daragnos's name swaps the paladin pink for warlock purple */
+:root[data-accent="warlock"]:not([data-theme="dark"]){--bg:#ecebfb; --panel:#f7f6ff; --ink:#25234a; --muted:#5d5a93; --line:#d7d5f4; --accent:#5b5cd6}
+:root[data-accent="warlock"][data-theme="dark"]{--accent:#8788ee}
+:root[data-accent="warlock"][data-theme="dark"] .panel{border-color:#2d4220; box-shadow:0 0 24px -14px rgba(143,209,79,.5)}
+#wlSeg{margin-left:auto;align-self:center}
+#wlSeg:not([hidden]) ~ #themeSeg{margin-left:0}
+:root[data-accent="warlock"]:not([data-theme="dark"]) .panel{border-color:#9ccc6e; box-shadow:0 0 24px -12px rgba(110,190,40,.55)}
+
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
 .wrap{max-width:1640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px;display:flex;flex-direction:column;gap:18px}
 header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px}
@@ -162,6 +170,7 @@ select{font:600 .84rem var(--f-body);color:var(--ink);background:var(--panel);bo
     <h1><span class="bosspick"><select id="boss" aria-label="Boss"><option value="./" selected>Sszorak</option><option value="fangs">Twin Fangs</option></select></span></h1>
     <select id="night" aria-label="Prog night" hidden></select>
     <span class="sub" id="sub">Loading…</span>
+    <div class="seg" id="wlSeg" role="group" aria-label="Warlock mode" hidden><button type="button" id="wlBtn" aria-pressed="false">Warlock mode</button></div>
     <div class="seg" id="themeSeg" role="group" aria-label="Color theme">
       <button type="button" id="thLight" aria-pressed="true">Light</button>
       <button type="button" id="thDark" aria-pressed="false">Dark</button>
@@ -1139,5 +1148,20 @@ applyView(); checkSite();
 })();
 </script>
 
+<script>
+// clicking Daragnos's name (only the name) turns warlock mode on or off and brings up a "Warlock mode" button beside Light/Dark.
+// Nothing is saved: a reload is back to normal with the button hidden (Light/Dark is still remembered).
+(() => { const root = document.documentElement, seg = document.getElementById('wlSeg'), btn = document.getElementById('wlBtn');
+  try { localStorage.removeItem('vir-accent'); localStorage.removeItem('vir-warlock-shown'); } catch (e) {}   // left over from an earlier version
+  const toggle = () => { const on = root.dataset.accent !== 'warlock';
+    if (on) root.dataset.accent = 'warlock'; else delete root.dataset.accent;
+    if (btn) btn.setAttribute('aria-pressed', String(on));
+    if (typeof render === 'function') render(); };   // canvas drawings pick up the new colors
+  document.addEventListener('click', e => {
+    const el = e.target.closest('.pn'); if (!el || el.textContent.trim() !== 'Daragnos') return;
+    if (seg) seg.hidden = false; toggle(); });
+  if (btn) btn.onclick = toggle;
+})();
+</script>
 </body>
 </html>

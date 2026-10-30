@@ -204,7 +204,7 @@ details.setup summary span{color:var(--muted);font-weight:400}
   <div class="panel">
     <div class="ph"><h2>Rouse the Brood kicks</h2><select class="scope" data-s="kicks" aria-label="Pulls to show"></select></div>
     <div class="quads" id="kicks"></div>
-    <p class="note">Each Rouse the Brood starts every quadrant's kick order over: the first Visceral Burst is player 1's turn, the next is player 2's, and so on. Anyone dead when a cast starts is skipped, so their turn passes to the next player instead of counting against anyone. <b>Correct</b>: kicked on their turn. <b>Missed</b>: their turn, but someone else kicked it or it went off. <b>Out of turn</b>: kicked a cast that was someone else's. A cast that stopped some other way (the Broodling died) still uses up that turn but isn't counted either way. <b>Backup</b> kicks on someone else's turn aren't out of turn, but that turn still counts as their miss; if everyone in a quadrant is dead, the turn goes to the backup. Left and right are as the raid sees it, facing the bosses; front melee is between the two bosses.</p>
+    <p class="note">Each Rouse the Brood starts every quadrant's kick order over: the first Visceral Burst is player 1's turn, the next is player 2's, and so on. Anyone dead when a cast starts is skipped, so their turn passes to the next player instead of counting against anyone. <b>Correct</b>: kicked on their turn. <b>Missed</b>: their turn and the cast went off. If someone else kicked it instead, that's their out-of-turn kick, not a miss. <b>Out of turn</b>: kicked a cast that was someone else's. A cast that stopped some other way (the Broodling died) still uses up that turn but isn't counted either way. <b>Backup</b> kicks on someone else's turn aren't out of turn; if everyone in a quadrant is dead, the turn goes to the backup. Left and right are as the raid sees it, facing the bosses; front melee is between the two bosses.</p>
   </div>
 
   <div class="panel">
@@ -515,7 +515,7 @@ function renderKicks(list, all){
           else row(by).out++;
           if (exp) cls = 'other';
         }
-        if (exp && counts){ const r = row(exp); r.turns++; if (by === exp) r.ok++; else r.miss++; }
+        if (exp && counts){ const r = row(exp); r.turns++; if (by === exp) r.ok++; else if (!by) r.miss++; }   // someone else kicking it isn't the turn-holder's miss
         if (single) log.push(`<span class="${cls === 'ok' ? '' : cls}" title="${esc(`Cast ${sq.k} after Rouse the Brood ${ri || '?'} at ${mss(b.t)} · ${b.kick ? `kicked by ${by}${b.kick.pet ? ' (pet)' : ''} with ${b.kick.spell} after ${b.kick.d.toFixed(2)} s` : b.res === 'completed' ? 'went off' : 'stopped some other way'}${exp ? ' · turn: ' + exp : ''}`)}">${sq.k === 1 && log.length ? '│ ' : ''}${mss(b.t)} ${esc(by || (b.res === 'completed' ? 'went off' : '—'))}${note || (exp && by !== exp ? ` (${esc(exp)}'s)` : '')}</span>`);
       });
     });

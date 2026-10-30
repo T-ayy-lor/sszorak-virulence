@@ -368,6 +368,23 @@ function quadOf(p, pos, b){
   return (dist <= QUAD_CFG.meleeYd ? 'm' : 'r') + (left ? 'l' : 'r');
 }
 
+// fill-ins: someone on the setup who isn't in a pull, replaced by someone in the pull who isn't on the setup.
+// Paired by who kicked the missing player's turns first, then (if one of each is left) by elimination.
+function fillIns(p){
+  const s = setup(), here = new Set(present(p));
+  const listed = new Set([...(s.backup || []), ...QUADS.flatMap(([q]) => s.kick[q] || []), ...Object.keys(s.feast || {})]);
+  const absent = [...listed].filter(n => !here.has(n)), extra = [...here].filter(n => !listed.has(n));
+  const map = {};   // fill-in -> who they replaced
+  if (!absent.length || !extra.length) return map;
+  // evidence: an unlisted player kicking a Broodling in a quadrant whose list holds a missing player
+  p.brood.forEach(b => { const by = b.kick && b.kick.by; if (!by || map[by] || !extra.includes(by)) return;
+    const q = quadOf(p, b.pos, b), cand = q && (s.kick[q] || []).find(n => absent.includes(n) && !Object.values(map).includes(n));
+    if (cand) map[by] = cand; });
+  const a = absent.filter(n => !Object.values(map).includes(n)), e = extra.filter(n => !map[n]);
+  if (a.length === 1 && e.length === 1) map[e[0]] = a[0];
+  return map;
+}
+
 // a Broodling that never took damage has no position in the log: if one of a quadrant's kickers got it, it was theirs
 function broodQuad(p, b){
   const q = quadOf(p, b.pos, b); if (q || !b.kick) return q;
@@ -498,7 +515,7 @@ function renderKicks(list, all){
     prio.forEach(row);
     let casts = 0, kicked = 0, wentOff = 0; const log = [];
     list.forEach(p => {
-      const here = new Set(present(p)), out = (n, t) => deadAt(p, n, t);   // dead: skipped (someone not in the pull keeps their turn for a fill-in)
+      const here = new Set(present(p)), fill = fillIns(p), out = (n, t) => deadAt(p, n, t);   // dead: skipped (someone not in the pull keeps their turn for a fill-in)
       // each Rouse the Brood starts the quadrant's kick order over; casts take turns down the list,
       // skipping anyone dead when the cast starts, so a death shifts the order instead of counting as a miss
       const seqs = {};
@@ -515,10 +532,10 @@ function renderKicks(list, all){
         sq.k++;
         casts++; if (b.kick) kicked++; else if (b.res === 'completed') wentOff++;
         const counts = b.kick || b.res === 'completed';
-        const absent = exp && !here.has(exp), sub = absent && b.kick && !onList.has(b.kick.by);   // a fill-in for someone not in the raid
+        const absent = exp && !here.has(exp), sub = absent && b.kick && (fill[b.kick.by] === exp || !onList.has(b.kick.by));   // a fill-in for someone not in the raid
         const by = b.kick && b.kick.by;
         let cls = b.kick ? 'ok' : b.res === 'completed' ? 'miss' : 'none', note = '';
-        if (sub){ const r = row(by); r.turns++; r.ok++; note = ` (for ${esc(exp)})`; }
+        if (sub){ const r = row(by); r.turns++; r.ok++; r.subFor ||= exp; note = ` (for ${esc(exp)})`; }
         else if (by && by !== exp){
           if (isBackup(by)){ B[by].kicks++; B[by].covered.push(exp); note = ` (backup${exp ? ' for ' + esc(exp) : ''})`; }
           else row(by).out++;
@@ -532,11 +549,14 @@ function renderKicks(list, all){
         if (single) log.push(`<span class="${cls === 'ok' ? '' : cls}" title="${esc(`Cast ${sq.k} after Rouse the Brood ${ri || '?'} at ${mss(b.t)} · ${b.kick ? `kicked by ${by}${b.kick.pet ? ' (pet)' : ''} with ${b.kick.spell} after ${b.kick.d.toFixed(2)} s` : b.res === 'completed' ? 'went off' : 'stopped some other way'}${exp ? ' · turn: ' + exp : ''}`)}">${sq.k === 1 && log.length ? '│ ' : ''}${mss(b.t)} ${esc(by || (b.res === 'completed' ? 'went off' : '—'))}${note || (exp && by !== exp ? ` (${esc(exp)}'s)` : '')}</span>`);
       });
     });
-    const rs = Object.values(rows).sort((a, b) => { const ia = prio.indexOf(a.n), ib = prio.indexOf(b.n); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || b.out - a.out; });
+    // players on the list who weren't in any of the shown pulls are left out; a fill-in takes their number
+    const inRaid = new Set(list.flatMap(p => present(p)));
+    const slot = r => { const i = prio.indexOf(r.n); return i >= 0 ? i : r.subFor ? prio.indexOf(r.subFor) + 0.5 : 99; };
+    const rs = Object.values(rows).filter(r => !list.length || inRaid.has(r.n) || r.turns || r.out).sort((a, b) => slot(a) - slot(b) || b.out - a.out);
     const nBlank = prio.length ? 0 : q === 'fm' ? 2 : 4;
     const blank = Array.from({length: nBlank}, (_, i) => `<tr><td class="l"><span class="dim">${i + 1}. —</span></td><td class="num dim">0</td><td class="num dim">0</td><td class="num dim">0</td><td class="num dim">0</td></tr>`).join('');
-    const tbl = `<div class="tw"><table><tr><th class="l fill">Kicker</th><th>Turns</th><th>Correct</th><th>Missed</th><th>Out of turn</th></tr>${rs.map(r => { const i = prio.indexOf(r.n);
-      return `<tr><td class="l">${i >= 0 ? `<span class="dim">${i + 1}.</span> ` : ''}${pname(r.n)}</td><td class="num${r.turns ? '' : ' dim'}">${r.turns}</td><td class="num ${r.ok ? 'good' : 'dim'}">${r.ok}</td><td class="num ${r.miss ? 'bad' : 'dim'}">${r.miss}</td><td class="num ${r.out ? 'meh' : 'dim'}">${r.out}</td></tr>`; }).join('')}${blank}</table></div>`;
+    const tbl = `<div class="tw"><table><tr><th class="l fill">Kicker</th><th>Turns</th><th>Correct</th><th>Missed</th><th>Out of turn</th></tr>${rs.map(r => { const i = prio.indexOf(r.n), si = r.subFor && i < 0 ? prio.indexOf(r.subFor) : -1;
+      return `<tr><td class="l">${i >= 0 ? `<span class="dim">${i + 1}.</span> ` : si >= 0 ? `<span class="dim">${si + 1}.</span> ` : ''}${pname(r.n)}${si >= 0 ? ` <span class="dim">for ${esc(r.subFor)}</span>` : ''}</td><td class="num${r.turns ? '' : ' dim'}">${r.turns}</td><td class="num ${r.ok ? 'good' : 'dim'}">${r.ok}</td><td class="num ${r.miss ? 'bad' : 'dim'}">${r.miss}</td><td class="num ${r.out ? 'meh' : 'dim'}">${r.out}</td></tr>`; }).join('')}${blank}</table></div>`;
     cards[q] = `<div class="quad"><h3>${label}</h3><div class="qs">${casts} cast${casts === 1 ? '' : 's'} · ${kicked} kicked · ${wentOff} went off</div>${tbl}${single && log.length ? `<div class="clog">${log.join('')}</div>` : ''}</div>`;
   });
   const br = Object.values(B);
@@ -549,23 +569,25 @@ function renderKicks(list, all){
 function renderFeast(list){
   const s = setup(), grp = s.feast || {}, any = Object.keys(grp).length > 0;
   const P = {}, row = n => (P[n] ||= {n, ok: 0, wrong: 0, miss: 0, missTB: 0});
-  list.forEach(p => { const who = present(p);
-    who.forEach(row);
+  const seen = new Set();
+  list.forEach(p => { const who = present(p), fill = fillIns(p), g0 = n => grp[n] || grp[fill[n]];
+    who.forEach(n => { row(n); seen.add(n); if (fill[n]) row(n).forN = fill[n]; });
     p.feasts.forEach((f, fi) => { const end = fi + 1 < p.feasts.length ? p.feasts[fi + 1].t : p.dur, tb = f.tb || [];
       f.slams.forEach((sl, k) => { const g = k + 1;
         if (!any) return;
-        sl.hit.forEach(n => { if (grp[n] !== g) row(n).wrong++; });
-        who.filter(n => grp[n] === g).forEach(n => { if (deadAt(p, n, sl.t)) return;
+        sl.hit.forEach(n => { if (g0(n) !== g) row(n).wrong++; });
+        who.filter(n => g0(n) === g).forEach(n => { if (deadAt(p, n, sl.t)) return;
           if (!sl.hit.includes(n)) { row(n).miss++; return; }
           const got = tb.some(([t, m]) => m === n && t >= f.t - 1 && t < end);
           if (!got){ const d = p.deaths.find(x => x[1] === n && x[0] > sl.t && x[0] < end && !tb.some(([t, m]) => m === n && t < x[0]));   // died before soaking it: not counted
             if (!d){ row(n).miss++; row(n).missTB++; } return; }
           row(n).ok++; }); }); }); });
-  ROSTER.forEach(([n]) => row(n));   // the whole roster, so the table is there before groups or pulls exist
-  const rows = Object.values(P).sort((a, b) => (grp[a.n] || 9) - (grp[b.n] || 9) || byRoster(a.n, b.n));
+  if (!list.length) ROSTER.forEach(([n]) => row(n));   // the whole roster, so the table is there before any pulls exist
+  const gOf = r => grp[r.n] || grp[r.forN];
+  const rows = Object.values(P).filter(r => !list.length || seen.has(r.n)).sort((a, b) => (gOf(a) || 9) - (gOf(b) || 9) || byRoster(a.n, b.n));
   const v = (x, cls) => any ? `<td class="num ${x ? cls : 'dim'}">${x}</td>` : '<td class="num dim">–</td>';
   $('feast').innerHTML = `<tr><th class="l fill">Player</th><th>Group</th><th>Correct</th><th>Wrong group</th><th>Missed</th><th title="Of the missed: soaked the slam but not the Tainted Blood">Missed Tainted Blood</th></tr>` +
-    rows.map(r => `<tr><td class="l">${pname(r.n)}</td><td class="num${grp[r.n] ? '' : ' dim'}">${grp[r.n] || '–'}</td>${v(r.ok, 'good')}${v(r.wrong, 'bad')}${v(r.miss, 'bad')}${v(r.missTB, 'meh')}</tr>`).join('') +
+    rows.map(r => `<tr><td class="l">${pname(r.n)}${r.forN && !grp[r.n] ? ` <span class="dim">for ${esc(r.forN)}</span>` : ''}</td><td class="num${gOf(r) ? '' : ' dim'}">${gOf(r) || '–'}</td>${v(r.ok, 'good')}${v(r.wrong, 'bad')}${v(r.miss, 'bad')}${v(r.missTB, 'meh')}</tr>`).join('') +
     (any ? '' : `<tr><td class="l dim" colspan="6">Set soak groups in fangs-setup.txt to score these.</td></tr>`);
 }
 function meter(el, list, key){

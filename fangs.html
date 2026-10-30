@@ -204,7 +204,7 @@ details.setup summary span{color:var(--muted);font-weight:400}
   <div class="panel">
     <div class="ph"><h2>Rouse the Brood kicks</h2><select class="scope" data-s="kicks" aria-label="Pulls to show"></select></div>
     <div class="quads" id="kicks"></div>
-    <p class="note">Each Rouse the Brood starts every quadrant's kick order over: the first Visceral Burst is player 1's turn, the next is player 2's, and so on. Anyone dead when a cast starts is skipped, so their turn passes to the next player instead of counting against anyone. <b>Correct</b>: kicked on their turn. <b>Missed</b>: their turn and the cast went off (unless they died before it finished). If someone else kicked it instead, that's their out-of-turn kick, not a miss. <b>Out of turn</b>: kicked a cast that was someone else's. A cast that stopped some other way (the Broodling died) still uses up that turn but isn't counted either way. <b>Backup</b> kicks on someone else's turn aren't out of turn; if everyone in a quadrant is dead, the turn goes to the backup. Someone who swapped in for a player on the kick order or soak groups takes that player's spot. Left and right are as the raid sees it, facing the bosses; front melee is between the two bosses.</p>
+    <p class="note">Each Rouse the Brood starts every quadrant's kick order over: the first Visceral Burst is player 1's turn, the next is player 2's, and so on. Anyone dead when a cast starts is skipped, so their turn passes to the next player instead of counting against anyone. <b>Correct</b>: kicked on their turn. <b>Missed</b>: their turn and the cast went off (unless they died before it finished). <b>Covered</b>: their turn, but someone else kicked it (that's the other player's out-of-turn kick, not a miss). <b>Out of turn</b>: kicked a cast that was someone else's. A cast that stopped some other way (the Broodling died) still uses up that turn but isn't counted either way. <b>Backup</b> kicks on someone else's turn aren't out of turn; if everyone in a quadrant is dead, the turn goes to the backup. Someone who swapped in for a player on the kick order or soak groups takes that player's spot. Left and right are as the raid sees it, facing the bosses; front melee is between the two bosses.</p>
   </div>
 
   <div class="panel">
@@ -380,8 +380,11 @@ function fillIns(p){
   p.brood.forEach(b => { const by = b.kick && b.kick.by; if (!by || map[by] || !extra.includes(by)) return;
     const q = quadOf(p, b.pos, b), cand = q && (s.kick[q] || []).find(n => absent.includes(n) && !Object.values(map).includes(n));
     if (cand) map[by] = cand; });
-  const a = absent.filter(n => !Object.values(map).includes(n)), e = extra.filter(n => !map[n]);
-  if (a.length === 1 && e.length === 1) map[e[0]] = a[0];
+  let a = absent.filter(n => !Object.values(map).includes(n)), e = extra.filter(n => !map[n]);
+  if (a.length === 1 && e.length === 1){ map[e[0]] = a[0]; return map; }
+  // otherwise pair by role (ranged for ranged, healer for healer...) when there's exactly one match
+  const role = n => (ROSTER.find(r => r[0] === n) || [])[2];
+  a.forEach(n => { const c = e.filter(x => !map[x] && role(x) && role(x) === role(n)); if (c.length === 1) map[c[0]] = n; });
   return map;
 }
 
@@ -511,11 +514,15 @@ function renderKicks(list, all){
   const cards = {};
   QUADS.forEach(([q, label]) => {
     const prio = (s.kick[q] || []).filter(Boolean);
-    const rows = {}, row = n => (rows[n] ||= {n, turns: 0, ok: 0, miss: 0, out: 0});
-    prio.forEach(row);
+    const rows = {}, row = n => (rows[n] ||= {n, turns: 0, ok: 0, miss: 0, cov: 0, out: 0, slot: prio.indexOf(n)});
+    if (!list.length) prio.forEach(row);
     let casts = 0, kicked = 0, wentOff = 0; const log = [];
     list.forEach(p => {
-      const here = new Set(present(p)), fill = fillIns(p), out = (n, t) => deadAt(p, n, t);   // dead: skipped (someone not in the pull keeps their turn for a fill-in)
+      const here = new Set(present(p)), fill = fillIns(p), out = (n, t) => deadAt(p, n, t);   // dead: skipped
+      // whoever swapped in for someone on the list takes their place in this pull's order
+      const swapIn = n => here.has(n) ? n : (Object.keys(fill).find(k => fill[k] === n) || n);
+      const order = prio.map(swapIn);
+      order.forEach((n, i) => { if (here.has(n)){ const r = row(n); if (r.slot < 0) r.slot = i; } });
       // each Rouse the Brood starts the quadrant's kick order over; casts take turns down the list,
       // skipping anyone dead when the cast starts, so a death shifts the order instead of counting as a miss
       const seqs = {};
@@ -524,18 +531,18 @@ function renderKicks(list, all){
         const ri = p.rouses.length ? p.rouses.filter(t => t <= b.t + 0.5).length : p.brood.filter(x => x.t <= b.t && !p.brood.some(y => y.t < x.t && y.t > x.t - 20)).length;
         const sq = (seqs[ri] ||= {ptr: 0, k: 0});
         let exp = null;
-        for (let tries = 0; prio.length && tries < prio.length; tries++){
-          const n = prio[sq.ptr % prio.length]; sq.ptr++;
+        for (let tries = 0; order.length && tries < order.length; tries++){
+          const n = order[sq.ptr % order.length]; sq.ptr++;
           if (!out(n, b.t)){ exp = n; break; }
         }
         if (!exp && prio.length) exp = backup.find(n => !out(n, b.t)) || null;   // everyone on the list is dead: the backup's turn
         sq.k++;
         casts++; if (b.kick) kicked++; else if (b.res === 'completed') wentOff++;
         const counts = b.kick || b.res === 'completed';
-        const absent = exp && !here.has(exp), sub = absent && b.kick && (fill[b.kick.by] === exp || !onList.has(b.kick.by));   // a fill-in for someone not in the raid
+        const absent = exp && !here.has(exp), sub = absent && b.kick && !onList.has(b.kick.by);   // someone not in the raid and no swap found: an unlisted kicker counts as theirs
         const by = b.kick && b.kick.by;
         let cls = b.kick ? 'ok' : b.res === 'completed' ? 'miss' : 'none', note = '';
-        if (sub){ const r = row(by); r.turns++; r.ok++; r.subFor ||= exp; }
+        if (sub){ const r = row(by); r.turns++; r.ok++; if (r.slot < 0) r.slot = prio.indexOf(exp); }
         else if (by && by !== exp){
           if (isBackup(by)){ B[by].kicks++; B[by].covered.push(exp); note = ` (backup${exp ? ' for ' + esc(exp) : ''})`; }
           else row(by).out++;
@@ -544,18 +551,18 @@ function renderKicks(list, all){
         // died while the cast was going (it takes 3 s): not a miss
         const diedOnTheWay = exp && !by && p.deaths.some(d => d[1] === exp && d[0] > b.t && d[0] <= b.t + CAST_LEN);
         if (diedOnTheWay) note = ` (${esc(exp)}'s, died)`;
-        if (exp && counts && !sub && !absent){ const r = row(exp); r.turns++; if (by === exp) r.ok++; else if (!by && !diedOnTheWay) r.miss++; }   // someone else kicking it isn't the turn-holder's miss
+        if (exp && counts && !sub && !absent){ const r = row(exp); r.turns++; if (by === exp) r.ok++; else if (by) r.cov++; else if (!diedOnTheWay) r.miss++; }   // someone else kicking it isn't the turn-holder's miss
         if (single) log.push(`<span class="${cls === 'ok' ? '' : cls}" title="${esc(`Cast ${sq.k} after Rouse the Brood ${ri || '?'} at ${mss(b.t)} · ${b.kick ? `kicked by ${by}${b.kick.pet ? ' (pet)' : ''} with ${b.kick.spell} after ${b.kick.d.toFixed(2)} s` : b.res === 'completed' ? 'went off' : 'stopped some other way'}${exp ? ' · turn: ' + exp : ''}`)}">${sq.k === 1 && log.length ? '│ ' : ''}${mss(b.t)} ${esc(by || (b.res === 'completed' ? 'went off' : '—'))}${note || (exp && by !== exp && !sub && !absent ? ` (${esc(exp)}'s)` : '')}</span>`);
       });
     });
     // players on the list who weren't in any of the shown pulls are left out; a fill-in takes their number
     const inRaid = new Set(list.flatMap(p => present(p)));
-    const slot = r => { const i = prio.indexOf(r.n); return i >= 0 ? i : r.subFor ? prio.indexOf(r.subFor) + 0.5 : 99; };
+    const slot = r => r.slot >= 0 ? r.slot + (prio[r.slot] === r.n ? 0 : 0.5) : 99;
     const rs = Object.values(rows).filter(r => !list.length || inRaid.has(r.n) || r.turns || r.out).sort((a, b) => slot(a) - slot(b) || b.out - a.out);
     const nBlank = prio.length ? 0 : q === 'fm' ? 2 : 4;
     const blank = Array.from({length: nBlank}, (_, i) => `<tr><td class="l"><span class="dim">${i + 1}. —</span></td><td class="num dim">0</td><td class="num dim">0</td><td class="num dim">0</td><td class="num dim">0</td></tr>`).join('');
-    const tbl = `<div class="tw"><table><tr><th class="l fill">Kicker</th><th>Turns</th><th>Correct</th><th>Missed</th><th>Out of turn</th></tr>${rs.map(r => { const i = prio.indexOf(r.n), si = r.subFor && i < 0 ? prio.indexOf(r.subFor) : -1;
-      return `<tr><td class="l">${i >= 0 ? `<span class="dim">${i + 1}.</span> ` : si >= 0 ? `<span class="dim">${si + 1}.</span> ` : ''}${pname(r.n)}</td><td class="num${r.turns ? '' : ' dim'}">${r.turns}</td><td class="num ${r.ok ? 'good' : 'dim'}">${r.ok}</td><td class="num ${r.miss ? 'bad' : 'dim'}">${r.miss}</td><td class="num ${r.out ? 'meh' : 'dim'}">${r.out}</td></tr>`; }).join('')}${blank}</table></div>`;
+    const tbl = `<div class="tw"><table><tr><th class="l fill">Kicker</th><th>Correct</th><th>Missed</th><th>Covered</th><th>Out of turn</th></tr>${rs.map(r => {
+      return `<tr><td class="l">${r.slot >= 0 ? `<span class="dim">${r.slot + 1}.</span> ` : ''}${pname(r.n)}</td><td class="num ${r.ok ? 'good' : 'dim'}">${r.ok}</td><td class="num ${r.miss ? 'bad' : 'dim'}">${r.miss}</td><td class="num${r.cov ? '' : ' dim'}">${r.cov}</td><td class="num ${r.out ? 'meh' : 'dim'}">${r.out}</td></tr>`; }).join('')}${blank}</table></div>`;
     cards[q] = `<div class="quad"><h3>${label}</h3><div class="qs">${casts} cast${casts === 1 ? '' : 's'} · ${kicked} kicked · ${wentOff} went off</div>${tbl}${single && log.length ? `<div class="clog">${log.join('')}</div>` : ''}</div>`;
   });
   const br = Object.values(B);

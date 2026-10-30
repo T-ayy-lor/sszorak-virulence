@@ -204,7 +204,7 @@ details.setup summary span{color:var(--muted);font-weight:400}
   <div class="panel">
     <div class="ph"><h2>Rouse the Brood kicks</h2><select class="scope" data-s="kicks" aria-label="Pulls to show"></select></div>
     <div class="quads" id="kicks"></div>
-    <p class="note">Each Rouse the Brood starts every quadrant's kick order over: the first Visceral Burst is player 1's turn, the next is player 2's, and so on. Anyone dead when a cast starts is skipped, so their turn passes to the next player instead of counting against anyone. <b>Correct</b>: kicked on their turn. <b>Missed</b>: their turn and the cast went off (unless they died before it finished). If someone else kicked it instead, that's their out-of-turn kick, not a miss. <b>Out of turn</b>: kicked a cast that was someone else's. A cast that stopped some other way (the Broodling died) still uses up that turn but isn't counted either way. <b>Backup</b> kicks on someone else's turn aren't out of turn; if everyone in a quadrant is dead, the turn goes to the backup. Left and right are as the raid sees it, facing the bosses; front melee is between the two bosses.</p>
+    <p class="note">Each Rouse the Brood starts every quadrant's kick order over: the first Visceral Burst is player 1's turn, the next is player 2's, and so on. Anyone dead when a cast starts is skipped, so their turn passes to the next player instead of counting against anyone. <b>Correct</b>: kicked on their turn. <b>Missed</b>: their turn and the cast went off (unless they died before it finished). If someone else kicked it instead, that's their out-of-turn kick, not a miss. <b>Out of turn</b>: kicked a cast that was someone else's. A cast that stopped some other way (the Broodling died) still uses up that turn but isn't counted either way. <b>Backup</b> kicks on someone else's turn aren't out of turn; if everyone in a quadrant is dead, the turn goes to the backup. Someone not in the raid keeps their turn: a kick by a player who isn't on any kick list counts as theirs, filling in. Left and right are as the raid sees it, facing the bosses; front melee is between the two bosses.</p>
   </div>
 
   <div class="panel">
@@ -345,7 +345,7 @@ function renderSetup(){
 
 // ---- helpers over a pull ----
 const deadAt = (p, n, t) => p.deaths.some(d => d[1] === n && d[0] <= t && (d[3] == null || d[3] > t));
-const SRC_NAME = {'Caustic Globule burst (unsoaked)': 'Unsoaked globule burst', 'Caustic Deluge (falling globule)': 'Falling globule'};
+const SRC_NAME = {'Caustic Globule burst (unsoaked)': 'Unsoaked globule burst', 'Caustic Deluge (falling globule)': 'Falling globule', 'Caustic Deluge': 'Caustic Deluge (tank debuff)'};
 const srcName = s => SRC_NAME[s] || s;
 const byRoster = (a, b) => rosterIdx(a) - rosterIdx(b) || a.localeCompare(b);
 const people = list => list.length ? [...new Set(list.flatMap(p => present(p)))].sort(byRoster) : ROSTER.map(r => r[0]);
@@ -489,6 +489,7 @@ function renderSoak(list, all){
 function renderKicks(list, all){
   const s = setup(), single = list.length === 1, backup = (s.backup || []).filter(Boolean);
   const isBackup = n => backup.includes(n);
+  const onList = new Set([...backup, ...QUADS.flatMap(([q]) => s.kick[q] || [])]);
   const B = {}; backup.forEach(n => { B[n] = {n, kicks: 0, covered: []}; });
   const cards = {};
   QUADS.forEach(([q, label]) => {
@@ -497,6 +498,7 @@ function renderKicks(list, all){
     prio.forEach(row);
     let casts = 0, kicked = 0, wentOff = 0; const log = [];
     list.forEach(p => {
+      const here = new Set(present(p)), out = (n, t) => deadAt(p, n, t);   // dead: skipped (someone not in the pull keeps their turn for a fill-in)
       // each Rouse the Brood starts the quadrant's kick order over; casts take turns down the list,
       // skipping anyone dead when the cast starts, so a death shifts the order instead of counting as a miss
       const seqs = {};
@@ -507,14 +509,17 @@ function renderKicks(list, all){
         let exp = null;
         for (let tries = 0; prio.length && tries < prio.length; tries++){
           const n = prio[sq.ptr % prio.length]; sq.ptr++;
-          if (!deadAt(p, n, b.t)){ exp = n; break; }
+          if (!out(n, b.t)){ exp = n; break; }
         }
-        if (!exp && prio.length) exp = backup.find(n => !deadAt(p, n, b.t)) || null;   // everyone on the list is dead: the backup's turn
+        if (!exp && prio.length) exp = backup.find(n => !out(n, b.t)) || null;   // everyone on the list is dead: the backup's turn
         sq.k++;
         casts++; if (b.kick) kicked++; else if (b.res === 'completed') wentOff++;
-        const counts = b.kick || b.res === 'completed', by = b.kick && b.kick.by;
+        const counts = b.kick || b.res === 'completed';
+        const absent = exp && !here.has(exp), sub = absent && b.kick && !onList.has(b.kick.by);   // a fill-in for someone not in the raid
+        const by = b.kick && b.kick.by;
         let cls = b.kick ? 'ok' : b.res === 'completed' ? 'miss' : 'none', note = '';
-        if (by && by !== exp){
+        if (sub){ const r = row(by); r.turns++; r.ok++; note = ` (for ${esc(exp)})`; }
+        else if (by && by !== exp){
           if (isBackup(by)){ B[by].kicks++; B[by].covered.push(exp); note = ` (backup${exp ? ' for ' + esc(exp) : ''})`; }
           else row(by).out++;
           if (exp) cls = 'other';
@@ -522,7 +527,8 @@ function renderKicks(list, all){
         // died while the cast was going (it takes 3 s): not a miss
         const diedOnTheWay = exp && !by && p.deaths.some(d => d[1] === exp && d[0] > b.t && d[0] <= b.t + CAST_LEN);
         if (diedOnTheWay) note = ` (${esc(exp)}'s, died)`;
-        if (exp && counts){ const r = row(exp); r.turns++; if (by === exp) r.ok++; else if (!by && !diedOnTheWay) r.miss++; }   // someone else kicking it isn't the turn-holder's miss
+        if (absent && !by) note = ` (${esc(exp)}'s, not in the raid)`;
+        if (exp && counts && !sub && !absent){ const r = row(exp); r.turns++; if (by === exp) r.ok++; else if (!by && !diedOnTheWay) r.miss++; }   // someone else kicking it isn't the turn-holder's miss
         if (single) log.push(`<span class="${cls === 'ok' ? '' : cls}" title="${esc(`Cast ${sq.k} after Rouse the Brood ${ri || '?'} at ${mss(b.t)} · ${b.kick ? `kicked by ${by}${b.kick.pet ? ' (pet)' : ''} with ${b.kick.spell} after ${b.kick.d.toFixed(2)} s` : b.res === 'completed' ? 'went off' : 'stopped some other way'}${exp ? ' · turn: ' + exp : ''}`)}">${sq.k === 1 && log.length ? '│ ' : ''}${mss(b.t)} ${esc(by || (b.res === 'completed' ? 'went off' : '—'))}${note || (exp && by !== exp ? ` (${esc(exp)}'s)` : '')}</span>`);
       });
     });

@@ -204,7 +204,7 @@ details.setup summary span{color:var(--muted);font-weight:400}
   <div class="panel">
     <div class="ph"><h2>Rouse the Brood kicks</h2><select class="scope" data-s="kicks" aria-label="Pulls to show"></select></div>
     <div class="quads" id="kicks"></div>
-    <p class="note">Each Rouse the Brood starts every quadrant's kick order over: the first Visceral Burst is player 1's turn, the next is player 2's, and so on. Anyone dead when a cast starts is skipped, so their turn passes to the next player instead of counting against anyone. <b>Correct</b>: kicked on their turn. <b>Missed</b>: their turn and the cast went off. If someone else kicked it instead, that's their out-of-turn kick, not a miss. <b>Out of turn</b>: kicked a cast that was someone else's. A cast that stopped some other way (the Broodling died) still uses up that turn but isn't counted either way. <b>Backup</b> kicks on someone else's turn aren't out of turn; if everyone in a quadrant is dead, the turn goes to the backup. Left and right are as the raid sees it, facing the bosses; front melee is between the two bosses.</p>
+    <p class="note">Each Rouse the Brood starts every quadrant's kick order over: the first Visceral Burst is player 1's turn, the next is player 2's, and so on. Anyone dead when a cast starts is skipped, so their turn passes to the next player instead of counting against anyone. <b>Correct</b>: kicked on their turn. <b>Missed</b>: their turn and the cast went off (unless they died before it finished). If someone else kicked it instead, that's their out-of-turn kick, not a miss. <b>Out of turn</b>: kicked a cast that was someone else's. A cast that stopped some other way (the Broodling died) still uses up that turn but isn't counted either way. <b>Backup</b> kicks on someone else's turn aren't out of turn; if everyone in a quadrant is dead, the turn goes to the backup. Left and right are as the raid sees it, facing the bosses; front melee is between the two bosses.</p>
   </div>
 
   <div class="panel">
@@ -265,7 +265,8 @@ $('thLight').onclick = () => setTheme('light', true); $('thDark').onclick = () =
 
 // ---- view state ----
 const SCOPES = ['map', 'venom', 'cc', 'soak', 'kicks', 'feast', 'dmg', 'heal', 'deaths'];
-const QUAD_CFG = {meleeYd: 25, frontYd: 11, flip: false};   // bosses stand about 16 yd either side of the middle   // how Broodlings are sorted into quadrants; tuned against real logs
+const QUAD_CFG = {meleeYd: 25, frontYd: 11, flip: false};
+const CAST_LEN = 3.2;   // Visceral Burst's cast time in the logs is 3 s   // bosses stand about 16 yd either side of the middle   // how Broodlings are sorted into quadrants; tuned against real logs
 const st = {scope: Object.fromEntries(SCOPES.map(k => [k, 'latest'])), ov: 'venom'};   // scope: 'latest', 'all' or a pull's key
 try { const v = JSON.parse(localStorage.getItem('fangs-view') || '{}'); if (v.ov === 'venom' || v.ov === 'ichor') st.ov = v.ov; } catch (e) {}
 const saveView = () => { try { localStorage.setItem('fangs-view', JSON.stringify({ov: st.ov})); } catch (e) {} };
@@ -353,13 +354,14 @@ const pullLabel = (p, all) => `${all ? dayDate(p.night) + ' · ' : ''}Pull ${p.s
   (p.kill || !p.hp ? '' : ' · ' + Object.entries(p.hp).map(([b, v]) => `${b} ${pct(v)}`).join(', '));
 
 // quadrant of a Broodling: melee if within QUAD_CFG.meleeYd of a boss; left/right of the line from the middle of the raid to the bosses
-function quadOf(p, pos){
-  if (!pos || !p.bpos || !p.rc) return null;
-  const bs = Object.values(p.bpos); if (!bs.length) return null;
+function quadOf(p, pos, b){
+  const bpos = (b && b.bp && Object.keys(b.bp).length) ? b.bp : p.bpos, rc = (b && b.rc) || p.rc;   // where the bosses and raid were when it cast
+  if (!pos || !bpos || !rc) return null;
+  const bs = Object.values(bpos); if (!bs.length) return null;
   const dist = Math.min(...bs.map(b => Math.hypot(b[0] - pos[0], b[1] - pos[1])));
   const B = [bs.reduce((a, b) => a + b[0], 0) / bs.length, bs.reduce((a, b) => a + b[1], 0) / bs.length];
   const o = q => [-q[1], -q[0]];   // world -> screen axes (right, down), north up
-  const ob = o(B), or = o(p.rc), ow = o(pos), f = [ob[0] - or[0], ob[1] - or[1]], w = [ow[0] - or[0], ow[1] - or[1]];
+  const ob = o(B), or = o(rc), ow = o(pos), f = [ob[0] - or[0], ob[1] - or[1]], w = [ow[0] - or[0], ow[1] - or[1]];
   let left = f[0] * w[1] - f[1] * w[0] < 0; if (QUAD_CFG.flip) left = !left;
   const fl = Math.hypot(f[0], f[1]) || 1, side = Math.abs(f[0] * w[1] - f[1] * w[0]) / fl;   // yards off the line from the raid to the bosses
   if (dist <= QUAD_CFG.meleeYd && side <= QUAD_CFG.frontYd) return 'fm';   // between the two bosses
@@ -368,7 +370,7 @@ function quadOf(p, pos){
 
 // a Broodling that never took damage has no position in the log: if one of a quadrant's kickers got it, it was theirs
 function broodQuad(p, b){
-  const q = quadOf(p, b.pos); if (q || !b.kick) return q;
+  const q = quadOf(p, b.pos, b); if (q || !b.kick) return q;
   const s = setup(); return (QUADS.find(([k]) => (s.kick[k] || []).includes(b.kick.by)) || [])[0] || null;
 }
 
@@ -499,7 +501,9 @@ function renderKicks(list, all){
       // skipping anyone dead when the cast starts, so a death shifts the order instead of counting as a miss
       const seqs = {};
       p.brood.filter(b => broodQuad(p, b) === q).sort((x, y) => x.t - y.t).forEach(b => {
-        const ri = p.rouses.filter(t => t <= b.t + 0.5).length, sq = (seqs[ri] ||= {ptr: 0, k: 0});
+        // which kick phase: the Rouse the Brood before this cast (if a Rouse is missing from the log, a 20 s gap between casts also starts a new phase)
+        const ri = p.rouses.length ? p.rouses.filter(t => t <= b.t + 0.5).length : p.brood.filter(x => x.t <= b.t && !p.brood.some(y => y.t < x.t && y.t > x.t - 20)).length;
+        const sq = (seqs[ri] ||= {ptr: 0, k: 0});
         let exp = null;
         for (let tries = 0; prio.length && tries < prio.length; tries++){
           const n = prio[sq.ptr % prio.length]; sq.ptr++;
@@ -515,7 +519,10 @@ function renderKicks(list, all){
           else row(by).out++;
           if (exp) cls = 'other';
         }
-        if (exp && counts){ const r = row(exp); r.turns++; if (by === exp) r.ok++; else if (!by) r.miss++; }   // someone else kicking it isn't the turn-holder's miss
+        // died while the cast was going (it takes 3 s): not a miss
+        const diedOnTheWay = exp && !by && p.deaths.some(d => d[1] === exp && d[0] > b.t && d[0] <= b.t + CAST_LEN);
+        if (diedOnTheWay) note = ` (${esc(exp)}'s, died)`;
+        if (exp && counts){ const r = row(exp); r.turns++; if (by === exp) r.ok++; else if (!by && !diedOnTheWay) r.miss++; }   // someone else kicking it isn't the turn-holder's miss
         if (single) log.push(`<span class="${cls === 'ok' ? '' : cls}" title="${esc(`Cast ${sq.k} after Rouse the Brood ${ri || '?'} at ${mss(b.t)} · ${b.kick ? `kicked by ${by}${b.kick.pet ? ' (pet)' : ''} with ${b.kick.spell} after ${b.kick.d.toFixed(2)} s` : b.res === 'completed' ? 'went off' : 'stopped some other way'}${exp ? ' · turn: ' + exp : ''}`)}">${sq.k === 1 && log.length ? '│ ' : ''}${mss(b.t)} ${esc(by || (b.res === 'completed' ? 'went off' : '—'))}${note || (exp && by !== exp ? ` (${esc(exp)}'s)` : '')}</span>`);
       });
     });

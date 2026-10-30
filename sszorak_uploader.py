@@ -612,8 +612,21 @@ class FangsParser:
                 dt = died.get(d['g'])
                 end = 'open' if d['off'] is None else 'died' if dt is not None and abs(dt - off) <= 0.6 else 'expired'
                 ichor.append({'n': nm(d['g']), 'on': round(d['on'], 2) if d['on'] is not None else None, 'off': round(off, 2), 'end': end, 'pos': pos(d['g'], off)})
-            # Visceral Burst casts (Broodlings of Ithraz) and kicks
+            # Visceral Burst casts (Broodlings of Ithraz) and kicks; the bosses move partway through the fight, so each cast
+            # carries where the bosses and the middle of the raid were right then (for its quadrant)
+            def boss_at(t):
+                out = {}
+                for npc, bn in self.BOSSES.items():
+                    pts = [q for g, tr in p['ctrack'].items() if '-' + npc + '-' in g for q in tr if q[0] <= t]
+                    if pts: q = max(pts); out[bn] = [round(q[1], 2), round(q[2], 2)]
+                return out
+            def raid_at(t):
+                pts = [(x, y) for tr in p['track'].values() for tt, x, y in tr if t - 3 <= tt <= t + 3]
+                if not pts: return None
+                xs, ys = sorted(x for x, _ in pts), sorted(y for _, y in pts)
+                return [round(xs[len(xs) // 2], 2), round(ys[len(ys) // 2], 2)]
             brood = [{'t': round(x['t'], 2), 'src': x['src'].rsplit('-', 1)[-1], 'pos': cpos(x['src'], x['t']), 'res': x['res'],
+                      'bp': boss_at(x['t']), 'rc': raid_at(x['t']),
                       'kick': dict(by=nm(x['kick']['g']), pet=x['kick']['pet'], spell=x['kick']['spell'], d=round(x['kick']['d'], 3)) if x['kick'] else None}
                      for x in p['casts']]
             # Ravenous Feast: up to 3 slams per cast (a slam's hits land together, so hits under 0.8 s apart are one slam),

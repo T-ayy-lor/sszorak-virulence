@@ -29,6 +29,16 @@
    "kill": false,
    "best": 0.30656426008945337,
    "updated": "2026-10-28T23:19:46+00:00"
+  },
+  {
+   "file": "nights/WoWCombatLog-102826_201858.json",
+   "log": "WoWCombatLog-102826_201858.txt",
+   "date": "10/28/2026",
+   "diff": 16,
+   "pulls": 30,
+   "kill": true,
+   "best": 0.18744744934334978,
+   "updated": "2026-10-29T03:29:57+00:00"
   }
  ]
 }

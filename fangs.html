@@ -74,6 +74,8 @@ td.good{color:var(--ok);font-weight:600} td.bad{color:var(--crit);font-weight:60
 .btn:hover{border-color:var(--accent)}
 .btn[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--panel)}
 [hidden]{display:none!important}
+a.ab{color:inherit;text-decoration:underline dotted;text-decoration-color:color-mix(in srgb,currentColor 45%,transparent);text-underline-offset:3px;cursor:help}
+a.ab:hover{text-decoration-color:var(--accent)}
 @media (max-width:600px){
   .panel{padding:12px}
   th,td{padding-left:8px}
@@ -578,6 +580,31 @@ function renderDeaths(list, all){
     Array.from({length: Math.max(0, N - rows.length)}, () => `<tr><td class="l dim">—</td><td class="num dim">0</td></tr>`).join('');
 }
 
+// ---- ability tooltips: ability names link to Wowhead, whose tooltip script shows the in-game ability text on hover ----
+const ABILITY = {'Eternal Venom': 1290336, 'Caustic Deluge': 1289192, 'Caustic Globule': 1289993, 'Caustic Globules': 1289993, 'Unsoaked globule burst': 1289993,
+  'Falling globule': 1289192, 'Envenomed': 1310360, 'Venomous Emergence': 1291404, 'Corrosive Spit': 1291478, 'Stir the Depths': 1290956, 'Vile Flood': 1294293,
+  'Concentrated Spittle': 1295107, 'Blood Torrent': 1303230, 'Barbed Bulwark': 1303378, 'Protected Gestation': 1303378, 'Rouse the Brood': 1308356,
+  'Visceral Burst': 1308385, 'Ravenous Feast': 1290516, 'Feasted': 1310096, 'Tainted Blood': 1310099, 'Tainted Burst': 1310105, 'Coiling Ichor': 1290809,
+  'Congealed Gore': 1292505, 'Stone Breaker': 1288538, 'Fractured': 1289092, 'Clotted Bolt': 1295115, 'Toxic Fumes': 1295049, 'Submerge': 1308556,
+  'Noxious Slick': 1309471, 'Uncoiled Wrath': 1308583, 'Sanguine Storm': 1306872};
+const AB_RE = new RegExp('\\b(' + Object.keys(ABILITY).sort((a, b) => b.length - a.length).map(k => k.replace(/ /g, '\\s')).join('|') + ')\\b', 'g');
+const AB_TEST = new RegExp(AB_RE.source);   // no 'g' flag: test() keeps no state between nodes
+function linkify(root){
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {acceptNode: n =>
+    n.parentElement.closest('a, select, option, script, style, svg, .tip, button, input') ? NodeFilter.FILTER_REJECT : AB_TEST.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP});
+  const nodes = []; while (walk.nextNode()) nodes.push(walk.currentNode);
+  nodes.forEach(n => {
+    const frag = document.createDocumentFragment(); let last = 0; const txt = n.nodeValue;
+    txt.replace(AB_RE, (m, _, i) => {
+      frag.append(txt.slice(last, i));
+      const id = ABILITY[m.replace(/\s/g, ' ')], a = document.createElement('a');
+      a.className = 'ab'; a.href = `https://www.wowhead.com/spell=${id}`; a.dataset.wowhead = `spell=${id}`; a.target = '_blank'; a.rel = 'noopener'; a.textContent = m;
+      frag.append(a); last = i + m.length; return m; });
+    frag.append(txt.slice(last)); n.replaceWith(frag);
+  });
+  try { if (window.$WowheadPower && $WowheadPower.refreshLinks) $WowheadPower.refreshLinks(); } catch (e) {}
+}
+
 // ---- render ----
 function render(){
   const ns = nights(), all = SITE.view === 'all';
@@ -598,6 +625,7 @@ function render(){
   renderMap(viewAll, L.map, L.map.length > 1); renderVenom(L.venom, all);
   renderCC(L.cc); renderSoak(L.soak, all); renderKicks(L.kicks, all); renderFeast(L.feast);
   meter($('dmg'), L.dmg, 'dmg'); meter($('heal'), L.heal, 'heal'); renderDeaths(L.deaths, all);
+  document.querySelectorAll('.panel').forEach(linkify);
 }
 document.querySelectorAll('select.scope').forEach(el => el.onchange = () => { st.scope[el.dataset.s] = el.value; render(); });
 $('night').onchange = e => { SITE.view = e.target.value; render(); };
@@ -617,6 +645,12 @@ setInterval(checkSite, 30000);
   b.onchange = () => { location.href = local && b.value === 'fangs' ? 'fangs.html' : b.value; };
   addEventListener('pageshow', () => { b.value = cur; fit(); });
 })();
+</script>
+<script>
+// Wowhead's tooltip script (falls back to its older power.js if the first URL doesn't load)
+window.whTooltips = {colorLinks: false, iconizeLinks: false, renameLinks: false};
+(() => { const load = (src, next) => { const sc = document.createElement('script'); sc.src = src; sc.async = true; if (next) sc.onerror = next; document.body.appendChild(sc); };
+  load('https://wow.zamimg.com/js/tooltips.js', () => load('https://wow.zamimg.com/widgets/power.js')); })();
 </script>
 </body>
 </html>

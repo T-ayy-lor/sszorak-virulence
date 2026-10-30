@@ -86,10 +86,16 @@ td.good{color:var(--ok);font-weight:600} td.bad{color:var(--crit);font-weight:60
 [hidden]{display:none!important}
 a.ab{color:inherit;text-decoration:underline dotted;text-decoration-color:color-mix(in srgb,currentColor 45%,transparent);text-underline-offset:3px;cursor:help}
 a.ab:hover{text-decoration-color:var(--accent)}
-th.srcth{cursor:pointer;user-select:none;max-width:6.5em;line-height:1.2}
-th.srcth:hover{color:var(--accent)}
+th.so{cursor:pointer;user-select:none}
+th.so:hover{color:var(--accent)}
+th.so.asc:not(.srcth)::after,th.srcth.asc .tt::after{content:'▲';font-size:.7em;margin-left:3px}
+th.so.desc:not(.srcth)::after,th.srcth.desc .tt::after{content:'▼';font-size:.7em;margin-left:3px}
+th.srcth{max-width:8.5em;line-height:1.2}
 th.srcth .sh{display:none}
-th.srcth.off{text-decoration:line-through;opacity:.55}
+#venomT th:not(:first-child),#venomT td:not(:first-child){text-align:center;padding-left:9px;padding-right:9px}
+.vtog{display:inline}
+.vtog input{width:.95em;height:.95em;margin:0 .35em 0 0;vertical-align:-.12em;cursor:pointer;accent-color:var(--accent)}
+th.srcth.off .lg,th.srcth.off .sh{text-decoration:line-through;opacity:.55}
 td.offc{opacity:.45}
 @media (max-width:600px){
   .panel{padding:12px}
@@ -99,6 +105,7 @@ td.offc{opacity:.45}
   .quads .quad{padding:8px}
   #venomT th,#venomT td{padding-left:5px}
   #venomT th.srcth{max-width:5.4em;font-size:.56rem;letter-spacing:0}
+  #venomT th:not(:first-child),#venomT td:not(:first-child){padding-left:3px;padding-right:3px}
   #venomT th.srcth .lg{display:none}
   #venomT th.srcth .sh{display:inline}
   .quads .quad th:not(:first-child),.quads .quad td:not(:first-child){padding-left:4px}
@@ -211,7 +218,7 @@ details.setup summary span{color:var(--muted);font-weight:400}
     <div class="panel vpanel">
       <div class="ph"><h2>Unnecessary Eternal Venom</h2><select class="scope" data-s="venom" aria-label="Pulls to show"></select></div>
       <div class="tw vt"><table id="venomT"></table></div>
-      <p class="note">Stacks from anything other than soaking a Caustic Globule, Venomous Emergence or Corrosive Spit. Click a source's heading to leave it out of the totals.</p>
+      <p class="note">Stacks from anything other than soaking a Caustic Globule, Venomous Emergence or Corrosive Spit. Untick a source to leave it out of the totals; click any heading to sort.</p>
     </div>
   </div>
 
@@ -478,7 +485,7 @@ const dot = (x, y, c, tip) => `<g ${at(x, y)} data-tip="${esc(tip)}"><circle r="
 })();
 $('ovSeg').querySelectorAll('button').forEach(b => b.onclick = () => { st.ov = b.dataset.ov; saveView(); render(); });
 const VOFF = new Set();   // sources left out of the Eternal Venom totals (click a source's heading)
-const SRC_SHORT = {'Unsoaked globule burst': 'Unsoaked burst', 'Caustic Deluge (tank debuff)': 'Deluge debuff', 'Falling globule': 'Falling glob', 'Stir the Depths': 'Stir', 'Toxic Fumes': 'Fumes'};
+const SRC_SHORT = {'Unsoaked globule burst': 'Glob burst', 'Caustic Deluge (tank debuff)': 'Deluge debuff', 'Falling globule': 'Falling glob', 'Stir the Depths': 'Stir', 'Toxic Fumes': 'Fumes'};
 const shortSrc = sn => SRC_SHORT[sn] || sn.replace(/\s*\(.*\)\s*/g, '');
 function renderVenom(list, all){
   const el = $('venomT'), single = list.length === 1;
@@ -489,11 +496,12 @@ function renderVenom(list, all){
   const srcs = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b));
   const total = r => srcs.reduce((a, sn) => a + (VOFF.has(sn) ? 0 : (r.src[sn] || 0)), 0);
   const rows = Object.values(P).sort((a, b) => total(b) - total(a) || byRoster(a.n, b.n));
-  el.innerHTML = `<tr><th class="l fill">Player</th>${srcs.map(sn => `<th class="srcth${VOFF.has(sn) ? ' off' : ''}" data-src="${esc(sn)}" title="${VOFF.has(sn) ? 'Left out of the total: click to count it' : 'Click to leave out of the total'}"><span class="lg">${esc(sn)}</span><span class="sh">${esc(shortSrc(sn))}</span></th>`).join('')}<th>Total</th></tr>` +
+  el.innerHTML = `<tr><th class="l fill">Player</th>${srcs.map(sn => `<th class="srcth${VOFF.has(sn) ? ' off' : ''}" data-src="${esc(sn)}"><span class="thw"><label class="vtog" title="${VOFF.has(sn) ? 'Left out of the total: tick to count it' : 'Counted in the total: untick to leave it out'}"><input type="checkbox" data-src="${esc(sn)}"${VOFF.has(sn) ? '' : ' checked'}></label><span class="tt"><span class="lg">${esc(sn)}</span><span class="sh">${esc(shortSrc(sn))}</span></span></span></th>`).join('')}<th>Total</th></tr>` +
     rows.map(r => `<tr><td class="l">${pname(r.n)}</td>${srcs.map(sn => { const v = r.src[sn] || 0, off = VOFF.has(sn);
       return `<td class="num${v && !off ? '' : ' dim'}${off ? ' offc' : ''}"${single && v ? ` title="${esc(times[r.n][sn].join(', '))}"` : ''}>${v}</td>`; }).join('')}<td class="num ${total(r) ? 'bad' : 'dim'}">${total(r)}</td></tr>`).join('') +
     (srcs.length ? '' : `<tr><td class="l dim" colspan="2">No unnecessary stacks${list.length ? '' : ' yet'}.</td></tr>`);
-  el.querySelectorAll('th.srcth').forEach(th => th.onclick = () => { const sn = th.dataset.src; VOFF.has(sn) ? VOFF.delete(sn) : VOFF.add(sn); renderVenom(list, all); });
+  el.querySelectorAll('.vtog').forEach(lb => lb.onclick = e => e.stopPropagation());
+  el.querySelectorAll('.vtog input').forEach(cb => cb.onchange = () => { const sn = cb.dataset.src; cb.checked ? VOFF.delete(sn) : VOFF.add(sn); renderVenom(list, all); sortTables(); });
 }
 
 // ---- timeline: one row per raid night, 8:30-11:30 PM ----
@@ -667,7 +675,7 @@ const AB_RE = new RegExp('\\b(' + Object.keys(ABILITY).sort((a, b) => b.length -
 const AB_TEST = new RegExp(AB_RE.source);   // no 'g' flag: test() keeps no state between nodes
 function linkify(root){
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {acceptNode: n =>
-    n.parentElement.closest('a, select, option, script, style, svg, .tip, button, input, th.srcth, .key') ? NodeFilter.FILTER_REJECT : AB_TEST.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP});
+    n.parentElement.closest('a, select, option, script, style, svg, .tip, button, input, th, .key') ? NodeFilter.FILTER_REJECT : AB_TEST.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP});
   const nodes = []; while (walk.nextNode()) nodes.push(walk.currentNode);
   nodes.forEach(n => {
     const frag = document.createDocumentFragment(); let last = 0; const txt = n.nodeValue;
@@ -704,7 +712,43 @@ function render(){
   renderCC(L.cc); renderSoak(L.soak, all); renderKicks(L.kicks, all); renderFeast(L.feast);
   meter($('dmg'), L.dmg, 'dmg'); meter($('heal'), L.heal, 'heal'); renderDeaths(L.deaths, all);
   document.querySelectorAll('.panel').forEach(linkify);
+  sortTables();
 }
+
+// ---- click any column heading to sort: high to low first (A to Z for names), click again to flip ----
+const SORT = {};   // table key -> {h: heading text, dir: 1 | -1}
+const tKey = t => t.id || 'kicks:' + ((t.closest('.quad') || {}).querySelector?.('h3')?.textContent || '');
+const hText = th => (th.querySelector('.lg') || th).textContent.trim();
+const blankRow = r => !!r.querySelector('td[colspan]') || [...r.querySelectorAll('td.l')].some(td => /^(\d+\.\s*)?—$/.test(td.textContent.trim()));
+function cellVal(td){
+  const t = td ? td.textContent.trim().replace(/^\d+\.\s+/, '') : '';
+  if (/^-?\d+(\.\d+)?$/.test(t)) return +t;
+  const m = t.match(/^(\d+):(\d\d)$/); if (m) return +m[1] * 60 + +m[2];
+  return t === '' || t === '–' || t === '—' ? null : t.toLowerCase();
+}
+function sortTables(){
+  document.querySelectorAll('table').forEach(t => {
+    let rows = [...t.rows]; const hi = rows.findIndex(r => !r.querySelector('th')) - 1, h0 = hi < -1 ? rows.length - 1 : hi;
+    if (h0 < 0) return; const hdr = rows[h0]; rows = [hdr, ...rows.slice(h0 + 1)];
+    const hs = [...hdr.cells];
+    hs.forEach(th => { th.classList.remove('asc', 'desc'); if (hText(th) !== '#') th.classList.add('so'); });
+    const st0 = SORT[tKey(t)]; if (!st0) return;
+    const ci = hs.findIndex(th => hText(th) === st0.h); if (ci < 0) return;
+    hs[ci].classList.add(st0.dir > 0 ? 'asc' : 'desc');
+    const data = rows.slice(1).filter(r => !blankRow(r)), blanks = rows.slice(1).filter(blankRow);
+    data.sort((a, b) => { const x = cellVal(a.cells[ci]), y = cellVal(b.cells[ci]);
+      if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;   // empty cells always last
+      return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * st0.dir; });
+    const body = rows[0].parentNode; [...data, ...blanks].forEach(r => body.appendChild(r));
+  });
+}
+document.addEventListener('click', e => {
+  const th = e.target.closest('th.so'); if (!th) return;
+  const t = th.closest('table'), k = tKey(t), h = hText(th), cur = SORT[k];
+  const first = [...t.rows].filter(r => !r.querySelector('th')).map(r => cellVal(r.cells[th.cellIndex])).find(v => v !== null);
+  SORT[k] = {h, dir: cur && cur.h === h ? -cur.dir : typeof first === 'string' ? 1 : -1};
+  sortTables();
+});
 document.querySelectorAll('select.scope').forEach(el => {
   el.onchange = () => { st.scope[el.dataset.s] = el.value; render(); };
   // a quick Latest / Overall switch next to each dropdown

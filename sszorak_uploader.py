@@ -3,7 +3,8 @@
 Raid uploader: watches your WoW combat log and, after every pull or wipe, pushes the night's data
 to your GitHub Pages repository. The pages pick it up on their own.
   Sszorak: positions, Virulence casts, explosions, damage, Tempest -> nights/<log name>.json, listed in nights.json
-  Twin Fangs: every cast of the spell the raid kicks, who kicked it and how fast -> fangs-nights/<log name>.json, listed in fangs.json
+  Twin Fangs: positions, Eternal Venom, globules, Coiling Ichor, kicks, Ravenous Feast soaks, damage, healing, deaths
+              -> fangs-nights/<log name>.json, listed in fangs.json
 """
 import base64, codecs, csv, getpass, glob, json, os, re, select, ssl, sys, time, urllib.error, urllib.request
 from datetime import datetime, timezone
@@ -25,7 +26,6 @@ SURGE_CAST, SURGE_DEBUFF = '1305959', '1305963'   # Venomous Surge: the boss's c
 SURGE_LEN = 9.5                                # a debuff that lasted at least this long ran out on its own (it lasts 10 s)
 TELEPORT = '48020'                             # Demonic Circle: Teleport, counted per player per pull
 DMG_STEP = 5                                   # seconds per damage window in each pull's timeline
-FANGS_SPELL = '1308385'                        # Twin Fangs: the cast the raid has to kick
 FANGS_DIR, FANGS_INDEX = 'fangs-nights', 'fangs.json'   # not 'fangs/': a folder by that name would block the /fangs page link
 
 
@@ -332,38 +332,74 @@ class Parser:
 
 
 class FangsParser:
-    """Records every cast of FANGS_SPELL and the kick that stopped it, in whatever encounter it shows up in
-    (so it works before we know Twin Fangs' encounter ID). Encounters without that cast are dropped."""
-    KEYS = re.compile('ENCOUNTER_START|ENCOUNTER_END|COMBATANT_INFO|' + FANGS_SPELL)
+    """Mythic The Twin Fangs (Vexhul and Ithraz). Any boss encounter with those NPCs in it is kept; everything the
+    Twin Fangs page needs is recorded: positions, Eternal Venom stacks and what caused them, Caustic Globules
+    (Caustic Deluge sets, soakers, CC, where they ruptured), Coiling Ichor drops, Visceral Burst kicks,
+    Ravenous Feast / Tainted Blood hits, damage, healing and deaths."""
+    BOSSES = {'257361': 'Vexhul', '257368': 'Ithraz'}
+    VENOM, GLOBULE, DELUGE = '1290336', '1289993', '1289192'
+    EMERGENCE, SPIT, ICHOR = '1291404', '1291478', '1290809'
+    BULWARK, ROUSE, BURST = '1303378', '1308356', '1308385'
+    FEAST, TAINTED = '1290516', '1310099'
+    OK_VENOM = {GLOBULE: 'Caustic Globule', EMERGENCE: 'Venomous Emergence', SPIT: 'Corrosive Spit'}
+    # CC auras (cast ID / applied aura ID where they differ) from the raid's classes
+    CC = {'221562': 'Asphyxiate', '207167': 'Blinding Sleet', '46968': 'Shockwave', '132168': 'Shockwave', '107570': 'Storm Bolt',
+          '132169': 'Storm Bolt', '5246': 'Intimidating Shout', '179057': 'Chaos Nova', '1234195': 'Void Nova', '217832': 'Imprison',
+          '207684': 'Sigil of Misery', '207685': 'Sigil of Misery', '211881': 'Fel Eruption', '119381': 'Leg Sweep', '115078': 'Paralysis',
+          '853': 'Hammer of Justice', '115750': 'Blinding Light', '105421': 'Blinding Light', '20066': 'Repentance', '1833': 'Cheap Shot',
+          '408': 'Kidney Shot', '1776': 'Gouge', '2094': 'Blind', '6770': 'Sap', '360806': 'Sleep Walk', '8122': 'Psychic Scream',
+          '64044': 'Psychic Horror', '192058': 'Capacitor Totem', '118905': 'Capacitor Totem', '51514': 'Hex', '5211': 'Mighty Bash',
+          '99': 'Incapacitating Roar', '33786': 'Cyclone', '109248': 'Binding Shot', '117526': 'Binding Shot', '19577': 'Intimidation',
+          '24394': 'Intimidation', '187650': 'Freezing Trap', '3355': 'Freezing Trap', '213691': 'Scatter Shot', '31661': "Dragon's Breath",
+          '118': 'Polymorph', '113724': 'Ring of Frost', '82691': 'Ring of Frost', '30283': 'Shadowfury', '5484': 'Howl of Terror',
+          '5782': 'Fear', '118699': 'Fear', '6789': 'Mortal Coil', '89766': 'Axe Toss'}
 
     def __init__(self):
         self.pulls, self.cur, self.leftover = [], None, ''
-        self.names, self.specs = {}, {}
+        self.names, self.specs, self.pets = {}, {}, {}
         self.finished = 0          # count of kept pulls that have ended
+
+    def has_data(self): return bool(self.pulls) or bool(self.cur and self.cur['twin'])
 
     def feed(self, text):
         text = self.leftover + text
         end = text.rfind('\n')
         if end < 0:
             self.leftover = text; return
-        last = -1
-        for m in self.KEYS.finditer(text, 0, end):          # only lines that can matter; everything else is skipped
-            a = text.rfind('\n', 0, m.start()) + 1
-            if a == last: continue
-            last = a
-            b = text.find('\n', m.start())
-            try: self.line(text[a:b if b >= 0 else end])
+        pos = 0
+        while pos < end:
+            if self.cur is None:                 # skip to the next boss pull that isn't Sszorak
+                m = text.find('ENCOUNTER_START,', pos)
+                if m < 0 or m >= end: break
+                pos = text.rfind('\n', 0, m) + 1
+            nl = text.find('\n', pos)
+            if nl < 0 or nl > end: nl = end
+            try: self.line(text[pos:nl])
             except (IndexError, ValueError): pass
+            pos = nl + 1
         self.leftover = text[end + 1:]
+
+    def start(self, l, rest):
+        r = Parser.split(rest)
+        if r[1] == ENC: self.cur = None; return              # Sszorak has its own parser
+        when = l.split(' ', 1)
+        self.cur = dict(enc=r[1], encName=r[2], t0=Parser.ts(l), clock=when[1][:8].split('.')[0], date=when[0], diff=int(r[3]),
+                        twin='twin fangs' in r[2].lower(), dur=0.0, kill=False, ended=False, lastT=0.0,
+                        track={}, ctrack={}, specGuid={}, died=[], dmg={}, heal={}, hp={},
+                        hits={}, stacks={}, venom=[], deluges=[], rouses=[], glob={}, globHits=[], cc=[], bulwark=set(),
+                        ichor={}, ichorOut=[], casts=[], open={}, feasts=[], feastHits=[], tainted=[])
 
     def close(self, r):
         c = self.cur
         if r: c['kill'], c['dur'] = r[5] == '1', int(r[6]) / 1000
         else: c['dur'] = c['lastT']
         c['ended'] = True
-        if c['casts']:
+        if c['twin']:
             self.pulls.append(c); self.finished += 1
         self.cur = None
+
+    def owner(self, g):
+        return g if g.startswith('Player-') else self.pets.get(g)
 
     def line(self, l):
         l = l.rstrip('\r')
@@ -373,49 +409,235 @@ class FangsParser:
         ev = rest[:rest.find(',')]
         if ev == 'ENCOUNTER_START':
             if self.cur: self.close(None)
-            r = Parser.split(rest)
-            self.cur = dict(enc=r[1], encName=r[2], t0=Parser.ts(l), clock=l.split(' ', 1)[1][:8].split('.')[0], date=l.split(' ', 1)[0],
-                            diff=int(r[3]), dur=0.0, kill=False, ended=False, lastT=0.0, casts=[], open={}, specGuid={})
-            return
+            self.start(l, rest); return
         c = self.cur
         if c is None: return
         t = Parser.ts(l) - c['t0']; c['lastT'] = t
-        if ev == 'ENCOUNTER_END':
-            self.close(rest.split(',')); return
+        if ev == 'ENCOUNTER_END': self.close(rest.split(',')); return
         if ev == 'COMBATANT_INFO':
-            r = rest.split(',', 27); c['specGuid'][r[1]] = int(r[25]); return
+            r = rest.split(',', 27)
+            try: c['specGuid'][r[1]] = int(r[25])
+            except (ValueError, IndexError): pass
+            return
         r = Parser.split(rest)
-        if ev == 'SPELL_CAST_START' and r[9] == FANGS_SPELL:
-            cast = {'t': t, 'src': r[1], 'name': r[2], 'kick': None, 'res': None}
-            c['casts'].append(cast); c['open'][r[1]] = cast
-        elif ev == 'SPELL_INTERRUPT' and FANGS_SPELL in (r[12] if len(r) > 12 else '', r[29] if len(r) > 29 else ''):
-            cast = c['open'].pop(r[5], None)
-            who = r[2].split('-')[0]
-            if r[1].startswith('Player-'): self.names[r[1]] = who
-            if cast:
-                cast['kick'] = {'by': who, 'pet': not r[1].startswith('Player-'), 'spell': r[10], 'd': t - cast['t']}
-                cast['res'] = 'kicked'
-        elif ev == 'SPELL_CAST_SUCCESS' and r[9] == FANGS_SPELL:
-            cast = c['open'].pop(r[1], None)
-            if cast: cast['res'] = 'completed'
-        elif ev == 'SPELL_CAST_FAILED' and r[9] == FANGS_SPELL:
-            cast = c['open'].pop(r[1], None)
+        if ev == 'UNIT_DIED':
+            if len(r) > 5 and r[5].startswith('Player-'): c['died'].append((t, r[5]))
+            return
+        if not (ev.startswith('SPELL_') or ev.startswith('SWING_') or ev.startswith('RANGE_')): return
+        src, dst = r[1], r[5]
+        if src.startswith('Player-'): self.names[src] = r[2].split('-')[0]
+        if dst.startswith('Player-'): self.names[dst] = r[6].split('-')[0]
+        if not c['twin'] and any(('-' + k + '-') in src or ('-' + k + '-') in dst for k in self.BOSSES): c['twin'] = True
+        swing = ev.startswith('SWING_')
+        sid = '' if swing else r[9]
+        if ev == 'SPELL_SUMMON':
+            o = self.owner(src)
+            if o: self.pets[dst] = o
+            return
+        # positions from the advanced-logging block
+        k = 9 if swing else 12
+        if len(r) > k + 17 and '-' in r[k]:
+            info = r[k]
+            own = r[k + 1]
+            if own and own.startswith('Player-') and not info.startswith('Player-'): self.pets[info] = own
+            try:
+                x, y = float(r[k + 14]), float(r[k + 15])
+                if info.startswith('Player-'): Parser.add_pt(c['track'].setdefault(info, []), t, x, y)
+                else:
+                    tr = c['ctrack'].setdefault(info, [])
+                    if not tr or t - tr[-1][0] >= 0.25: tr.append((t, x, y))
+                    for npc, nm in self.BOSSES.items():
+                        if '-' + npc + '-' in info:
+                            hp, mx = float(r[k + 2]), float(r[k + 3])
+                            if mx > 0: c['hp'][nm] = hp / mx
+            except ValueError: pass
+        # ---- auras
+        if ev.startswith('SPELL_AURA'):
+            if sid == self.VENOM and dst.startswith('Player-'):
+                prev = c['stacks'].get(dst, 0)
+                if ev == 'SPELL_AURA_APPLIED': n = 1
+                elif ev == 'SPELL_AURA_APPLIED_DOSE': n = int(r[-1]) if r[-1].isdigit() else prev + 1
+                elif ev == 'SPELL_AURA_REMOVED_DOSE': n = int(r[-1]) if r[-1].isdigit() else max(prev - 1, 0)
+                elif ev == 'SPELL_AURA_REMOVED': n = 0
+                else: return
+                c['stacks'][dst] = n
+                if n > prev:
+                    c['venom'].append({'t': t, 'g': dst, 'n': n, 'auraSrc': r[2]})
+            elif sid == self.ICHOR and dst.startswith('Player-'):
+                if ev == 'SPELL_AURA_APPLIED': c['ichor'][dst] = t
+                elif ev == 'SPELL_AURA_REMOVED':
+                    on = c['ichor'].pop(dst, None); c['ichorOut'].append({'g': dst, 'on': on, 'off': t})
+            elif sid == self.BULWARK and not dst.startswith('Player-'):
+                c['bulwark'].add(dst)
+            elif ev == 'SPELL_AURA_APPLIED' and sid in self.CC and not dst.startswith('Player-'):
+                o = self.owner(src)
+                if o: c['cc'].append((t, o, dst, self.CC[sid]))
+            return
+        # ---- casts
+        if ev == 'SPELL_CAST_SUCCESS' or ev == 'SPELL_CAST_START':
+            if sid == self.DELUGE and ev == 'SPELL_CAST_SUCCESS': c['deluges'].append(t)
+            elif sid == self.ROUSE and ev == 'SPELL_CAST_SUCCESS': c['rouses'].append(t)
+            elif sid == self.FEAST and ev == 'SPELL_CAST_START': c['feasts'].append(t)
+            elif sid == self.GLOBULE and not src.startswith('Player-'): c['glob'].setdefault(src, {'first': t})
+            if sid == self.BURST and ev == 'SPELL_CAST_START':
+                cast = {'t': t, 'src': src, 'kick': None, 'res': None}
+                c['casts'].append(cast); c['open'][src] = cast
+            elif sid == self.BURST and ev == 'SPELL_CAST_SUCCESS':
+                cast = c['open'].pop(src, None)
+                if cast: cast['res'] = 'completed'
+            return
+        if ev == 'SPELL_CAST_FAILED' and sid == self.BURST:
+            cast = c['open'].pop(src, None)
             if cast: cast['res'] = 'stopped'
+            return
+        if ev == 'SPELL_INTERRUPT' and self.BURST in (r[12] if len(r) > 12 else '', r[29] if len(r) > 29 else ''):
+            cast = c['open'].pop(dst, None)
+            if cast:
+                o = self.owner(src) or src
+                cast['kick'] = {'g': o, 'name': r[2].split('-')[0], 'pet': not src.startswith('Player-'), 'spell': r[10], 'd': t - cast['t']}
+                cast['res'] = 'kicked'
+            return
+        # ---- damage and healing
+        if ev.endswith('_DAMAGE') or ev.endswith('_MISSED'):
+            if dst.startswith('Player-') and not src.startswith('Player-'):
+                c['hits'].setdefault(dst, []).append((t, sid, 'Melee' if swing else r[10]))
+                if sid == self.GLOBULE: c['globHits'].append((t, src, dst))
+                elif sid == self.FEAST: c['feastHits'].append((t, dst))
+                elif sid == self.TAINTED: c['tainted'].append((t, dst))
+            if ev.endswith('_DAMAGE'):
+                try: val = float(r[k + 19]) - max(float(r[k + 21]), 0) + max(float(r[k + 25]), 0)
+                except (ValueError, IndexError): val = 0.0
+            elif len(r) > k + 2 and r[k] == 'ABSORB':
+                try: val = float(r[k + 2])
+                except ValueError: val = 0.0
+            else: val = 0.0
+            if val > 0:
+                try: hostile_dst = not (int(r[7], 16) & 0x10)
+                except ValueError: hostile_dst = False
+                o = self.owner(src)
+                if hostile_dst and o: c['dmg'][o] = c['dmg'].get(o, 0) + val
+            return
+        if ev in ('SPELL_HEAL', 'SPELL_PERIODIC_HEAL'):
+            try: val = float(r[k + 19]) - max(float(r[k + 21]), 0)
+            except (ValueError, IndexError): val = 0.0
+            o = self.owner(src)
+            if o and val > 0: c['heal'][o] = c['heal'].get(o, 0) + val
+            return
+        if ev == 'SPELL_ABSORBED':           # shields: credited to whoever cast the shield
+            a = 9 if (r[9].startswith('Player-') or r[9].startswith('Creature-') or r[9].startswith('Pet-')) else 12
+            try:
+                o = self.owner(r[a]); val = float(r[a + 7])
+                if o and val > 0: c['heal'][o] = c['heal'].get(o, 0) + val
+            except (ValueError, IndexError): pass
 
     def build(self, log_name):
-        pulls = self.pulls + ([self.cur] if self.cur and self.cur['casts'] else [])
+        nm = lambda g: self.names.get(g, g)
+        pulls = self.pulls + ([self.cur] if self.cur and self.cur['twin'] else [])
         for p in pulls:
             for g, sp in p['specGuid'].items():
                 if g in self.names: self.specs[self.names[g]] = sp
-        out, count = [], {}
-        for p in pulls:
-            count[p['enc']] = count.get(p['enc'], 0) + 1
-            out.append({'n': count[p['enc']], 'enc': p['enc'], 'encName': p['encName'], 'clock': p['clock'], 'date': p['date'], 'diff': p['diff'],
-                        'dur': round(p['dur'] if p['ended'] else p['lastT'], 1), 'kill': p['kill'], 'live': not p['ended'],
-                        'casts': [{'t': round(k['t'], 2), 'caster': k['name'], 'src': k['src'].rsplit('-', 1)[-1],
-                                   'kick': dict(k['kick'], d=round(k['kick']['d'], 3)) if k['kick'] else None, 'res': k['res']} for k in p['casts']]})
-        return {'log': log_name, 'spell': int(FANGS_SPELL), 'updated': datetime.now(timezone.utc).isoformat(timespec='seconds'),
-                'pulls': out, 'specs': dict(self.specs)}
+        out = []
+        for n, p in enumerate(pulls, 1):
+            stop = p['dur'] if p['ended'] else p['lastT']
+            pos = lambda g, t: Parser.pos_at(p['track'].get(g, []), t)
+            def cpos(g, t):
+                tr = p['ctrack'].get(g) or []
+                prior = [q for q in tr if q[0] <= t + 0.5]
+                q = prior[-1] if prior else (tr[0] if tr else None)
+                return [round(q[1], 2), round(q[2], 2)] if q else None
+            setno = lambda t: sum(1 for d in p['deluges'] if d <= t + 0.5)
+            # Eternal Venom stacks and what caused each one
+            venom = []
+            for v in p['venom']:
+                recent = [h for h in p['hits'].get(v['g'], []) if -0.3 <= v['t'] - h[0] <= 1.0]
+                okh = [h for h in recent if h[1] in self.OK_VENOM]
+                near = lambda hs: min(hs, key=lambda h: abs(v['t'] - h[0]))
+                if okh: src, ok = self.OK_VENOM[near(okh)[1]], True
+                elif recent: src, ok = near(recent)[2], False
+                else: src, ok = (v['auraSrc'] if v['auraSrc'] not in ('nil', '') else 'Unknown'), False
+                venom.append({'t': round(v['t'], 2), 'n': nm(v['g']), 'st': v['n'], 'src': src, 'ok': ok, 'pos': pos(v['g'], v['t'])})
+            # Caustic Globules: each globule's burst, who soaked it, where it ruptured, who CC'd it
+            bursts = []                       # one burst per globule rupture: its damage hits arrive within a few seconds
+            for t, src, dst in sorted(p['globHits']):
+                b = next((b for b in reversed(bursts) if b['src'] == src and t - b['t'] <= 3.0), None)
+                if not b:
+                    b = {'t': t, 'src': src, 'soak': set()}; bursts.append(b)
+                b['soak'].add(dst)
+            boss = lambda g: any('-' + k + '-' in g for k in self.BOSSES)
+            globules, seen = [], set()
+            for i, b in enumerate(bursts):
+                g = b['src']
+                spots = [q for q in (pos(s, b['t']) for s in b['soak']) if q]
+                at = None if boss(g) else cpos(g, b['t'])
+                if not at and spots: at = [round(sum(q[0] for q in spots) / len(spots), 2), round(sum(q[1] for q in spots) / len(spots), 2)]
+                born = p['glob'].get(g, {}).get('first')
+                if born is None and p['ctrack'].get(g) and not boss(g): born = p['ctrack'][g][0][0]
+                cc = [] if boss(g) else [[round(t, 2), nm(o), sp] for t, o, d, sp in p['cc'] if d == g]
+                seen.add(g)
+                globules.append({'id': g.rsplit('-', 1)[-1] + ('' if not boss(g) else f'#{i}'), 'set': setno(born if born is not None else b['t']),
+                                 'rupt': round(b['t'], 2), 'pos': at, 'soak': sorted(nm(s) for s in b['soak']), 'cc': cc})
+            for g in (set(p['bulwark']) | set(p['glob']) | {d for _, _, d, _ in p['cc'] if d in p['bulwark'] or d in p['glob']}) - seen:
+                born = p['glob'].get(g, {}).get('first') or (p['ctrack'][g][0][0] if p['ctrack'].get(g) else 0)
+                globules.append({'id': g.rsplit('-', 1)[-1], 'set': setno(born), 'rupt': None, 'pos': None, 'soak': [],
+                                 'cc': [[round(t, 2), nm(o), sp] for t, o, d, sp in p['cc'] if d == g]})
+            globules.sort(key=lambda x: (x['rupt'] is None, x['rupt'] or 0))
+            # Coiling Ichor: where each player stood when it ran out
+            died = {}
+            for t, g in p['died']: died.setdefault(g, t)
+            ichor = []
+            for d in p['ichorOut'] + [{'g': g, 'on': on, 'off': None} for g, on in p['ichor'].items()]:
+                off = d['off'] if d['off'] is not None else stop
+                dt = died.get(d['g'])
+                end = 'open' if d['off'] is None else 'died' if dt is not None and abs(dt - off) <= 0.6 else 'expired'
+                ichor.append({'n': nm(d['g']), 'on': round(d['on'], 2) if d['on'] is not None else None, 'off': round(off, 2), 'end': end, 'pos': pos(d['g'], off)})
+            # Visceral Burst casts (Broodlings of Ithraz) and kicks
+            brood = [{'t': round(x['t'], 2), 'src': x['src'].rsplit('-', 1)[-1], 'pos': cpos(x['src'], x['t']), 'res': x['res'],
+                      'kick': dict(by=nm(x['kick']['g']), pet=x['kick']['pet'], spell=x['kick']['spell'], d=round(x['kick']['d'], 3)) if x['kick'] else None}
+                     for x in p['casts']]
+            # Ravenous Feast: slams (hits grouped 1.5 s apart) and the Tainted Blood after each
+            def groups(hits, gap):
+                gs = []
+                for t, g in sorted(hits):
+                    if not gs or t - gs[-1]['t1'] > gap: gs.append({'t': t, 't1': t, 'hit': set()})
+                    gs[-1]['t1'] = t; gs[-1]['hit'].add(g)
+                return gs
+            slams, tblood = groups(p['feastHits'], 1.5), groups(p['tainted'], 1.5)
+            feasts = []
+            starts = sorted(p['feasts'])
+            for s in slams:
+                f = max((i for i, ft in enumerate(starts) if ft <= s['t'] + 0.5), default=None)
+                key = f if f is not None else -1
+                if not feasts or feasts[-1]['key'] != key or len(feasts[-1]['slams']) >= 3:
+                    feasts.append({'key': key, 't': round(starts[f], 2) if f is not None else round(s['t'], 2), 'slams': []})
+                nxt = [x for x in slams if x['t'] > s['t']]
+                limit = nxt[0]['t'] if nxt else s['t'] + 30
+                tb = next((x for x in tblood if s['t'] < x['t'] < limit), None)
+                feasts[-1]['slams'].append({'t': round(s['t'], 2), 'hit': sorted(nm(g) for g in s['hit']),
+                                            'tb': round(tb['t'], 2) if tb else None, 'tbHit': sorted(nm(g) for g in tb['hit']) if tb else []})
+            for f in feasts: f.pop('key')
+            # deaths: what hit them last, and when they were back up (a battle rez)
+            deaths = []
+            for t, g in sorted(p['died']):
+                last = [h for h in p['hits'].get(g, []) if t - 5 <= h[0] <= t + 0.2]
+                back = next((q[0] for q in p['track'].get(g, []) if q[0] > t + 1.0), None)
+                deaths.append([round(t, 2), nm(g), last[-1][2] if last else None, round(back, 2) if back is not None else None])
+            # where the bosses stood and the middle of the raid (medians), for the kick quadrants
+            med = lambda a: sorted(a)[len(a) // 2] if a else None
+            bpos = {}
+            for npc, bn in self.BOSSES.items():
+                pts = [q for g, tr in p['ctrack'].items() if '-' + npc + '-' in g for q in tr]
+                if pts: bpos[bn] = [round(med([q[1] for q in pts]), 2), round(med([q[2] for q in pts]), 2)]
+            allp = [q for tr in p['track'].values() for q in tr]
+            rc = [round(med([q[1] for q in allp]), 2), round(med([q[2] for q in allp]), 2)] if allp else None
+            stacks_max = {}
+            for v in p['venom']: stacks_max[nm(v['g'])] = max(stacks_max.get(nm(v['g']), 0), v['n'])
+            out.append({'n': n, 'enc': p['enc'], 'encName': p['encName'], 'clock': p['clock'], 'date': p['date'], 'diff': p['diff'],
+                        'dur': round(stop, 1), 'kill': p['kill'], 'live': not p['ended'], 'hp': {k: round(v, 4) for k, v in p['hp'].items()},
+                        'deaths': deaths, 'bpos': bpos, 'rc': rc,
+                        'deluges': [round(t, 2) for t in p['deluges']], 'rouses': [round(t, 2) for t in p['rouses']],
+                        'venom': venom, 'stacks': stacks_max, 'globules': globules, 'ichor': ichor, 'brood': brood, 'feasts': feasts,
+                        'dmg': {nm(g): round(v) for g, v in p['dmg'].items()}, 'heal': {nm(g): round(v) for g, v in p['heal'].items()}})
+        return {'log': log_name, 'updated': datetime.now(timezone.utc).isoformat(timespec='seconds'), 'pulls': out, 'specs': dict(self.specs)}
 
 
 # ---- GitHub ----
@@ -506,7 +728,9 @@ def date_key(d):
 def night_entry(data, night_file):
     pulls = data['pulls']
     first = pulls[0] if pulls else {}
-    hps = [p['hp'] for p in pulls if p.get('hp') is not None and not p['kill']]   # Twin Fangs pulls carry no hp
+    # lowest boss health on a wipe (Twin Fangs pulls carry one health per boss: use the higher of the two)
+    hps = [max(p['hp'].values()) if isinstance(p.get('hp'), dict) and p['hp'] else p.get('hp') for p in pulls if not p['kill']]
+    hps = [h for h in hps if isinstance(h, (int, float))]
     return {'file': night_file, 'log': data['log'], 'date': first.get('date'), 'diff': first.get('diff'),
             'pulls': len(pulls), 'kill': any(p['kill'] for p in pulls), 'best': min(hps) if hps else None,
             'updated': data['updated']}
@@ -612,7 +836,7 @@ def main():
                     if show: bar(pos, total, f'Reading log  {fmt_size(pos)} of {fmt_size(total)}')
                 if show:
                     n = sum(1 for p in parser.pulls if not p['ended'] or (p['dur'] or 0) >= 2)   # same pulls the site shows
-                    nf = len(fangs.pulls) + (1 if fangs.cur and fangs.cur['casts'] else 0)
+                    nf = len(fangs.pulls) + (1 if fangs.cur and fangs.cur['twin'] else 0)
                     print(f'\n[{stamp()}] Found {n} Sszorak pull{"" if n == 1 else "s"} and {nf} Twin Fangs pull{"" if nf == 1 else "s"} so far')
                 # a pull ended (or first look at a log with Sszorak pulls): queue an upload
                 wait = MIN_UPLOAD_GAP - (time.time() - last_upload)
@@ -628,7 +852,7 @@ def main():
                 if sys.stdin.isatty() and select.select([sys.stdin], [], [], 0)[0]:
                     cmd = sys.stdin.readline().strip().lower()
                     if cmd == 'push':
-                        if parser.pulls or fangs.pulls or (fangs.cur and fangs.cur['casts']): push = True
+                        if parser.pulls or fangs.has_data(): push = True
                         else: print(f'[{stamp()}] Nothing to upload yet: no Sszorak or Twin Fangs pulls in this log.')
                     elif cmd: print(f'[{stamp()}] Type "push" and press Return to upload right now.')
                 if push or (pending and (dry or once or wait <= 0)):

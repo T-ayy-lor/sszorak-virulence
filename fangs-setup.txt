@@ -1,0 +1,14 @@
+# Twin Fangs setup. Save, then commit and push in GitHub Desktop.
+# Names are separated by commas. Capitals and accents don't matter (Shenron = Shènròn).
+# Anything after a # is ignored.
+
+# Rouse the Brood kick order: casts take turns down the list (1st cast = 1st name, 2nd = 2nd...). Dead players are skipped.
+melee left: Jeckw, Monostereo, Calexanich
+melee right: Daragnos, Neineimuu, Spellrift
+ranged left: Agility, Tayluor, Whispersix, Kiirelan
+ranged right: Aktapewpew, Sueldh, Sighhigh, Waynegry
+
+# Ravenous Feast soak groups: group 1 soaks slam 1, group 2 slam 2, group 3 slam 3.
+group 1: Shenron, Zynzii, Daragnos, Monostereo, Calexanich, Agility
+group 2: Integralgrip, Phurry, Skwup, Tayluor, Whispersix, Waynegry, Jeckw
+group 3: Snakespeare, Sighhigh, Sueldh, Aktapewpew, Neineimuu, Spellrift, Kiirelan

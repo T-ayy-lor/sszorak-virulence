@@ -203,7 +203,7 @@ details.setup summary span{color:var(--muted);font-weight:400}
   <div class="panel">
     <div class="ph"><h2>Ravenous Feast soaks</h2><select class="scope" data-s="feast" aria-label="Pulls to show"></select></div>
     <div class="tw"><table id="feast"></table></div>
-    <p class="note">Slam 1 is group 1's, slam 2 group 2's, slam 3 group 3's. <b>Correct</b>: soaked your group's slam, then a Tainted Blood before the next Ravenous Feast. <b>Wrong group</b>: soaked another group's slam. <b>Missed</b>: didn't soak your group's slam, or soaked it but not the Tainted Blood. Dead players aren't counted.</p>
+    <p class="note">Slam 1 is group 1's, slam 2 group 2's, slam 3 group 3's. <b>Correct</b>: soaked your group's slam and the Tainted Blood in the same Ravenous Feast. <b>Wrong group</b>: soaked another group's slam. <b>Missed</b>: didn't soak your group's slam, or soaked it but not the Tainted Blood. Dead players aren't counted.</p>
   </div>
 
   <div class="grid3">
@@ -529,8 +529,8 @@ function renderFeast(list){
         sl.hit.forEach(n => { if (grp[n] !== g) row(n).wrong++; });
         who.filter(n => grp[n] === g).forEach(n => { if (deadAt(p, n, sl.t)) return;
           if (!sl.hit.includes(n)) { row(n).miss++; return; }
-          const got = tb.some(([t, m]) => m === n && t > sl.t && t < end);
-          if (!got){ const d = p.deaths.find(x => x[1] === n && x[0] > sl.t && x[0] < end);   // died before soaking it: not counted
+          const got = tb.some(([t, m]) => m === n && t >= f.t - 1 && t < end);
+          if (!got){ const d = p.deaths.find(x => x[1] === n && x[0] > sl.t && x[0] < end && !tb.some(([t, m]) => m === n && t < x[0]));   // died before soaking it: not counted
             if (!d){ row(n).miss++; row(n).missTB++; } return; }
           row(n).ok++; }); }); }); });
   ROSTER.forEach(([n]) => row(n));   // the whole roster, so the table is there before groups or pulls exist

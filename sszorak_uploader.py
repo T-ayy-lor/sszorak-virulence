@@ -26,6 +26,8 @@ SURGE_CAST, SURGE_DEBUFF = '1305959', '1305963'   # Venomous Surge: the boss's c
 SURGE_LEN = 9.5                                # a debuff that lasted at least this long ran out on its own (it lasts 10 s)
 TELEPORT = '48020'                             # Demonic Circle: Teleport, counted per player per pull
 DMG_STEP = 5                                   # seconds per damage window in each pull's timeline
+SETUP_PATH = 'fangs-setup.txt'                 # Twin Fangs kick order and soak groups, read by the page
+WOW_DIR = os.path.dirname(LOG_DIR)             # .../_retail_; Northern Sky Raid Tools saves its notes under WTF/Account/*/SavedVariables
 FANGS_DIR, FANGS_INDEX = 'fangs-nights', 'fangs.json'   # not 'fangs/': a folder by that name would block the /fangs page link
 
 
@@ -739,6 +741,158 @@ def merge_index(idx, entry):
     return idx
 
 
+# ---- "notechange": copy the kick order and soak groups from the Northern Sky Raid Tools note into fangs-setup.txt ----
+def nsrt_strings(path):
+    """Every string value in a SavedVariables file, as (table path, key, text). WoW writes these files on /reload or logout."""
+    b = open(path, 'rb').read()
+    out, stack, key, i, n = [], [], None, 0, len(b)
+    var = re.compile(rb'([A-Za-z_]\w*)\s*=\s*'); bkey = re.compile(rb'\[\s*"((?:[^"\\]|\\.)*)"\s*\]\s*=\s*'); nkey = re.compile(rb'\[\s*([^\]"]+?)\s*\]\s*=\s*')   # [1], [1.5], [true]
+    esc = {ord('n'): b'\n', ord('t'): b'\t', ord('r'): b'\r', ord('a'): b'\a', ord('b'): b'\b', ord('f'): b'\f', ord('v'): b'\v'}
+    while i < n:
+        c = b[i]
+        if c in b' \t\r\n,;': i += 1; continue
+        if b.startswith(b'--', i):
+            j = b.find(b'\n', i); i = n if j < 0 else j; continue
+        m = bkey.match(b, i) or nkey.match(b, i) or (var.match(b, i) if not stack else None)
+        if m: key = m.group(1).decode('utf-8', 'replace'); i = m.end(); continue
+        if c == ord('{'): stack.append(key); key = None; i += 1; continue
+        if c == ord('}'):
+            if stack: stack.pop()
+            key = None; i += 1; continue
+        if c == ord('"'):
+            j, buf = i + 1, bytearray()
+            while j < n and b[j] != ord('"'):
+                if b[j] == ord('\\') and j + 1 < n:
+                    d = b[j + 1]
+                    if 48 <= d <= 57:
+                        k = j + 1
+                        while k < n and k < j + 4 and 48 <= b[k] <= 57: k += 1
+                        buf.append(int(b[j + 1:k]) & 255); j = k; continue
+                    buf += esc.get(d, bytes([d])); j += 2; continue
+                buf.append(b[j]); j += 1
+            out.append((tuple(stack), key, buf.decode('utf-8', 'replace'))); key = None; i = j + 1; continue
+        while i < n and b[i] not in b',}\n': i += 1          # numbers, true, false, nil
+        key = None
+    return out
+
+def find_fangs_note(sv_override=None):
+    files = [sv_override] if sv_override else glob.glob(os.path.join(WOW_DIR, 'WTF', 'Account', '*', 'SavedVariables', 'NorthernSkyRaidTools.lua'))
+    files = [f for f in files if f and os.path.exists(f)]
+    if not files: return None, None, 'Could not find NorthernSkyRaidTools.lua under ' + os.path.join(WOW_DIR, 'WTF', 'Account')
+    path = max(files, key=os.path.getmtime)
+    strings = nsrt_strings(path)
+    twin = lambda t: 'EncounterID:3421' in t or re.search(r'(?i)melee kick|soak (first|second|third)', t)
+    # the note the raid leader shared, then any saved note for the Twin Fangs
+    picks = [t for p, k, t in strings if p == ('NSRT',) and k == 'StoredSharedReminder' and twin(t)] + \
+            [t for p, k, t in strings if p == ('NSRT', 'Reminders') and twin(t)]
+    if not picks: return path, None, 'No Twin Fangs note in ' + path + ' (in WoW, type /reload after the note changes so WoW saves it)'
+    return path, picks[0], None
+
+QKEYS = [('melee left', 'Melee left'), ('front melee', 'Front melee'), ('melee right', 'Melee right'), ('ranged left', 'Ranged left'), ('ranged right', 'Ranged right')]
+NOT_NAMES = {'everyone', 'melee', 'ranged', 'tank', 'healer', 'damager', 'dps'}
+
+def parse_fangs_note(note):
+    """Kick order per quadrant, backup kickers and soak groups from the note's reminder lines."""
+    kick, backup, groups, warn = {}, [], {}, []
+    first = lambda m: m.group(1).strip() if m else None
+    for line in note.split('\n'):
+        tag, text = first(re.search(r'tag:([^;]+)', line)), first(re.search(r'text:([^;]+)', line))
+        if not tag or not text: continue
+        tm = re.search(r'time:(-?[\d.]+)', line); t = float(tm.group(1)) if tm else 0.0
+        names = [x for x in tag.split() if x.lower() not in NOT_NAMES and not re.fullmatch(r'(?i)group\d|\d+', x)]
+        if not names: continue
+        m = re.match(r'(?i)(left|right|front)\s+(melee|range|ranged)\s+kick\s*(\d+)', text)
+        if m:
+            side, kind = m.group(1).lower(), 'melee' if m.group(2).lower() == 'melee' else 'ranged'
+            q = 'front melee' if side == 'front' else f'{kind} {side}'
+            slot, prev = int(m.group(3)), kick.setdefault(q, {}).get(int(m.group(3)))
+            if prev is None or t < prev[0]:
+                if prev and prev[1] != names[0]: warn.append(f'{q} kick {slot}: {names[0]} at {t:g}s, {prev[1]} later; using {names[0]}')
+                kick[q][slot] = (t, names[0])
+            elif prev[1] != names[0]: warn.append(f'{q} kick {slot}: {prev[1]} first, {names[0]} at {t:g}s; using {prev[1]}')
+            continue
+        if re.match(r'(?i)backup\s+kick', text):
+            backup += [x for x in names if x not in backup]; continue
+        m = re.match(r'(?i)soak\s+(first|second|third|1|2|3)\b', text)
+        if m:
+            g = {'first': 1, 'second': 2, 'third': 3}.get(m.group(1).lower()) or int(m.group(1))
+            for x in names:
+                if x in groups and groups[x] != g: warn.append(f'{x} is in soak group {groups[x]} and {g}; using {groups[x]}')
+                else: groups[x] = g
+    out = {q: [n for _, (_, n) in sorted(kick[q].items())] for q in kick}
+    if backup: out['backup'] = backup
+    for g in (1, 2, 3):
+        ns = [x for x, v in groups.items() if v == g]
+        if ns: out[f'group {g}'] = ns
+    return out, warn
+
+def read_setup(text):
+    """key -> names from fangs-setup.txt (same keys the page accepts)."""
+    alias = {'meleeleft': 'melee left', 'leftmelee': 'melee left', 'ml': 'melee left', 'meleeright': 'melee right', 'rightmelee': 'melee right', 'mr': 'melee right',
+             'frontmelee': 'front melee', 'meleefront': 'front melee', 'front': 'front melee', 'fm': 'front melee',
+             'rangedleft': 'ranged left', 'leftranged': 'ranged left', 'leftrange': 'ranged left', 'rangeleft': 'ranged left', 'rl': 'ranged left',
+             'rangedright': 'ranged right', 'rightranged': 'ranged right', 'rightrange': 'ranged right', 'rangeright': 'ranged right', 'rr': 'ranged right',
+             'backup': 'backup', 'backupkicker': 'backup', 'backups': 'backup', 'group1': 'group 1', 'g1': 'group 1', 'group2': 'group 2', 'g2': 'group 2', 'group3': 'group 3', 'g3': 'group 3'}
+    out = {}
+    for raw in (text or '').split('\n'):
+        line = raw.split('#', 1)[0].strip()
+        if ':' not in line: continue
+        k, v = line.split(':', 1)
+        k = alias.get(re.sub(r'\s+', '', k.lower()))
+        if k: out[k] = [x.strip() for x in v.split(',') if x.strip()]
+    return out
+
+def write_setup(cfg):
+    lines = ['# Twin Fangs setup. Save, then commit and push in GitHub Desktop, or type "notechange" in the uploader window',
+             '# to copy it from the Northern Sky Raid Tools note (type /reload in WoW first so the note is saved).',
+             "# Names are separated by commas. Capitals and accents don't matter (Shenron = Shènròn).",
+             '# Anything after a # is ignored.', '',
+             '# Rouse the Brood kick order: casts take turns down the list (1st cast = 1st name, 2nd = 2nd...). Dead players are skipped.',
+             "# Front melee is the tank side, past the bosses. Backup kicks on anyone's turn without counting as out of turn."]
+    lines += [f'{k}: {", ".join(cfg.get(k, []))}' for k, _ in QKEYS] + [f'backup: {", ".join(cfg.get("backup", []))}', '',
+              '# Ravenous Feast soak groups: group 1 soaks first, group 2 second, group 3 third.']
+    lines += [f'group {g}: {", ".join(cfg.get(f"group {g}", []))}' for g in (1, 2, 3)]
+    return '\n'.join(lines) + '\n'
+
+def note_change(up, dry, out_dir, sv_override=None):
+    """Read the note, merge it into fangs-setup.txt, and publish it (or write it to out_dir with --dry-run)."""
+    path, note, err = find_fangs_note(sv_override)
+    if err: print(f'[{stamp()}] {err}'); return
+    found, warn = parse_fangs_note(note)
+    if not found: print(f'[{stamp()}] The Twin Fangs note has no kick or soak lines to copy.'); return
+    when = datetime.fromtimestamp(os.path.getmtime(path)).strftime('%I:%M %p').lstrip('0')
+    print(f'[{stamp()}] Read the Twin Fangs note (WoW saved it at {when}; type /reload in WoW first if it changed after that).')
+    for w in warn: print(f'           note: {w}')
+    if dry:
+        cur_path = os.path.join(out_dir, SETUP_PATH)
+        cur_text = open(cur_path, encoding='utf-8').read() if os.path.exists(cur_path) else ''
+        sha = None
+    else:
+        try:
+            cur = up.api('GET', f'contents/{SETUP_PATH}?ref={BRANCH}'); sha = cur['sha']
+            cur_text = base64.b64decode(cur['content']).decode('utf-8')
+        except urllib.error.HTTPError as e:
+            if e.code != 404: print(f'[{stamp()}] Could not read {SETUP_PATH} from GitHub: {e}'); return
+            cur_text, sha = '', None
+    old = read_setup(cur_text)
+    new = dict(old); new.update(found)                     # anything the note doesn't mention stays as it was
+    changes = [(k, old.get(k, []), new.get(k, [])) for k in [q for q, _ in QKEYS] + ['backup', 'group 1', 'group 2', 'group 3'] if old.get(k, []) != new.get(k, [])]
+    if not changes: print(f'[{stamp()}] {SETUP_PATH} already matches the note. Nothing to change.'); return
+    for k, a, b in changes:
+        print(f'           {k}: {", ".join(a) or "—"}  ->  {", ".join(b) or "—"}')
+    text = write_setup(new)
+    if dry:
+        with open(os.path.join(out_dir, SETUP_PATH), 'w', encoding='utf-8') as f: f.write(text)
+        print(f'[{stamp()}] Wrote {SETUP_PATH} in {out_dir}.'); return
+    body = {'message': 'Twin Fangs setup from the raid note', 'content': base64.b64encode(text.encode('utf-8')).decode(), 'branch': BRANCH}
+    if sha: body['sha'] = sha
+    try:
+        up.api('PUT', f'contents/{SETUP_PATH}', body)
+        print(f'[{stamp()}] Saved {SETUP_PATH} to GitHub. The page shows it in a minute or two; in GitHub Desktop, Fetch then Pull to get it locally.')
+    except Exception as e:
+        print(f'[{stamp()}] Could not save {SETUP_PATH} to GitHub: {e}')
+
+
 def newest_log():
     files = glob.glob(os.path.join(LOG_DIR, 'WoWCombatLog*.txt'))
     return max(files, key=os.path.getmtime) if files else None
@@ -756,6 +910,7 @@ def main():
     if '--boss' in sys.argv: BOSS_NPC = '-' + sys.argv[sys.argv.index('--boss') + 1] + '-'
 
     up = None if dry else Uploader(get_token())
+    sv_override = sys.argv[sys.argv.index('--sv') + 1] if '--sv' in sys.argv else None
     if up:
         try: gh('GET', f'https://api.github.com/repos/{REPO}', up.token)
         except urllib.error.HTTPError as e:
@@ -767,11 +922,14 @@ def main():
             sys.exit(f'Could not reach GitHub: {e.reason}')
         print(f'[{stamp()}] Connected to github.com/{REPO}')
 
+    if '--notechange' in sys.argv:
+        note_change(up, dry, out_dir, sv_override); return
     path, fh, parser, fangs, seen_finished, pending, last_upload = None, None, None, None, None, False, 0.0
 
     dec, pos = None, 0
     print(f'[{stamp()}] Watching {LOG_DIR} for Sszorak and Twin Fangs pulls. Press Control-C to stop.')
     print(f'[{stamp()}] Type "push" and press Return to upload right now instead of waiting.')
+    print(f'[{stamp()}] Type "notechange" and press Return to copy kicks and soak groups from the raid note into {SETUP_PATH}.')
 
 
     def send():
@@ -814,6 +972,15 @@ def main():
 
     try:
         while True:
+            cmd = ''
+            if sys.stdin.isatty() and select.select([sys.stdin], [], [], 0)[0]:
+                cmd = sys.stdin.readline().strip().lower()
+                if cmd == 'notechange':
+                    note_change(up, dry, out_dir, sv_override); cmd = ''
+                elif cmd and cmd != 'push':
+                    print(f'[{stamp()}] Commands: "push" uploads now, "notechange" copies the raid note into {SETUP_PATH}.'); cmd = ''
+                elif cmd == 'push' and not fh:
+                    print(f'[{stamp()}] Nothing to upload yet: no combat log found.'); cmd = ''
             newest = path_override or newest_log()
             if newest and newest != path:
                 if fh: fh.close()
@@ -846,12 +1013,9 @@ def main():
                               '(at most one upload every 6 minutes, to stay under GitHub Pages\' build limit).')
                 # typed in this window: "push" uploads now, skipping the 6-minute wait
                 push = False
-                if sys.stdin.isatty() and select.select([sys.stdin], [], [], 0)[0]:
-                    cmd = sys.stdin.readline().strip().lower()
-                    if cmd == 'push':
-                        if parser.pulls or fangs.has_data(): push = True
-                        else: print(f'[{stamp()}] Nothing to upload yet: no Sszorak or Twin Fangs pulls in this log.')
-                    elif cmd: print(f'[{stamp()}] Type "push" and press Return to upload right now.')
+                if cmd == 'push':
+                    if parser.pulls or fangs.has_data(): push = True
+                    else: print(f'[{stamp()}] Nothing to upload yet: no Sszorak or Twin Fangs pulls in this log.')
                 if push or (pending and (dry or once or wait <= 0)):
                     if push: print(f'[{stamp()}] Uploading now (push).')
                     if send():

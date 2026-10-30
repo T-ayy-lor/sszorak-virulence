@@ -1,9 +1,10 @@
-# Twin Fangs setup. Save, then commit and push in GitHub Desktop.
+# Twin Fangs setup. Save, then commit and push in GitHub Desktop, or type "notechange" in the uploader window
+# to copy it from the Northern Sky Raid Tools note (type /reload in WoW first so the note is saved).
 # Names are separated by commas. Capitals and accents don't matter (Shenron = Shènròn).
 # Anything after a # is ignored.
 
 # Rouse the Brood kick order: casts take turns down the list (1st cast = 1st name, 2nd = 2nd...). Dead players are skipped.
-# Front melee is the tank side, past the bosses. Backup kicks on anyone's turn without counting as out of turn.
+# Front melee is between the two bosses. Backup kicks on anyone's turn without counting as out of turn.
 melee left: Jeckw, Monostereo, Calexanich
 front melee: Integralgrip, Phurry
 melee right: Daragnos, Neineimuu, Spellrift
@@ -12,6 +13,6 @@ ranged right: Aktapewpew, Sueldh, Sighhigh, Waynegry
 backup: Zynzii
 
 # Ravenous Feast soak groups: group 1 soaks first, group 2 second, group 3 third.
-group 1: Roychi, Zynzii, Daragnos, Monostereo, Calexanich, Progenesis
-group 2: Snakespeare, Sighhigh, Sueldh, Aktapewpew, Neineimuu, Spellrift, Kiirelan
+group 1: Roychi, Zynzii, Kiirelan, Monostereo, Calexanich, Progenesis
+group 2: Snakespeare, Sighhigh, Sueldh, Aktapewpew, Neineimuu, Spellrift, Daragnos
 group 3: Integralgrip, Phurry, Skwup, Tayluor, Whispersix, Waynegry, Jeckw

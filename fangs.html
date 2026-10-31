@@ -322,17 +322,21 @@ function nights(){
   return ns;
 }
 function viewPulls(ns){ return SITE.view === 'all' ? ns.flatMap(n => n.pulls) : ((ns.find(n => n.key === SITE.view) || {}).pulls || []); }
+// checked every few seconds; the page only redraws when something actually changed
 async function checkSite(){
+  let changed = !SITE.index; const err0 = SITE.err;
   try {
     const idx = await fetchJSON('fangs.json');
-    await Promise.all((idx.nights || []).map(async e => { const have = SITE.files[e.file]; if (!have || have.updated !== e.updated) SITE.files[e.file] = await fetchJSON(e.file); }));
+    await Promise.all((idx.nights || []).map(async e => { const have = SITE.files[e.file]; if (!have || have.updated !== e.updated){ SITE.files[e.file] = await fetchJSON(e.file); changed = true; } }));
+    if (SITE.index && (SITE.index.nights || []).length !== (idx.nights || []).length) changed = true;
     SITE.index = idx; SITE.err = null;
     if (!SITE.view){ const ns = nights(); SITE.view = ns.length ? ns[ns.length - 1].key : null; }   // newest night on load only
   } catch (e) {
-    SITE.err = /404/.test(String(e)) ? null : 'Could not load the data; trying again in 30 seconds.';
+    SITE.err = /404/.test(String(e)) ? null : 'Could not load the data; trying again in a few seconds.';
     if (!SITE.index) SITE.index = {nights: []};
   }
-  try { const r = await fetch('fangs-setup.txt?t=' + Date.now(), {cache: 'no-store'}); if (r.ok){ const t = await r.text(); if (t !== SETUP.text){ SETUP.text = t; } } } catch (e) {}
+  try { const r = await fetch('fangs-setup.txt?t=' + Date.now(), {cache: 'no-store'}); if (r.ok){ const t = await r.text(); if (t !== SETUP.text){ SETUP.text = t; changed = true; } } } catch (e) {}
+  if (!changed && SITE.err === err0) return;
   renderSetup();   // also re-checks names against anyone new in the logs
   render();
 }
@@ -763,7 +767,7 @@ $('night').onchange = e => { SITE.view = e.target.value; render(); };
 renderSetup();
 checkSite();
 let rsz; addEventListener('resize', () => { clearTimeout(rsz); rsz = setTimeout(render, 150); });
-setInterval(checkSite, 30000);
+setInterval(checkSite, 5000);
 // boss picker in the title: each boss has its own page
 (() => { const b = document.getElementById('boss'); const cur = b.value;
   const fit = () => { const m = document.createElement('span'), cs = getComputedStyle(b);

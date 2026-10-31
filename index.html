@@ -891,7 +891,7 @@ async function checkSite(){
     // open on the newest night; after that, never change the night someone is looking at
     if (!SITE.view){ const ns = nights(); SITE.view = ns.length ? ns[ns.length - 1].key : null; }
     if (changed) applyView();
-  } catch (e) { SITE.err = SITE.index ? 'Could not refresh the nights list; trying again in 30 seconds.' : null; }
+  } catch (e) { SITE.err = SITE.index ? 'Could not refresh the nights list; trying again in a few seconds.' : null; }
   finally { setLiveStatus(); }
 }
 function renderNightSelect(){
@@ -923,7 +923,7 @@ function setLiveStatus(){
   const last = D.pulls[D.pulls.length - 1], when = D.updated ? ` · updated ${ago(Date.parse(D.updated))}` : '';
   t.textContent = SITE.view === 'all' ? `All nights · ${D.pulls.length} Sszorak pulls${when}` : `${D.pulls.length} Sszorak pulls · latest: ${pullLabel(last)}${when}`;
 }
-setInterval(checkSite, 30000);
+setInterval(checkSite, 5000);
 setInterval(setLiveStatus, 15000);
 
 // ---- damage meter ----

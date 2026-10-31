@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Raid uploader: watches your WoW combat log and, after every pull or wipe, pushes the night's data
-to your GitHub Pages repository. The pages pick it up on their own.
+Taynalysis uploader: watches your WoW combat log and, after every pull or wipe, sends the night's data
+to taynalysis.com (or, with --github, to the GitHub Pages copy of the site). Open pages pick it up on their own.
   Sszorak: positions, Virulence casts, explosions, damage, Tempest -> nights/<log name>.json, listed in nights.json
   Twin Fangs: positions, Eternal Venom, globules, Coiling Ichor, kicks, Ravenous Feast soaks, damage, healing, deaths
               -> fangs-nights/<log name>.json, listed in fangs.json
@@ -17,7 +17,12 @@ NIGHT_DIR = 'nights'                       # one file per night (per combat log)
 INDEX_PATH = 'nights.json'                 # list of all nights, read by the page's night picker
 TOKEN_FILE = os.path.expanduser('~/.taynalysis_uploader_token')
 POLL_SECONDS = 3
-MIN_UPLOAD_GAP = 360        # seconds between uploads: GitHub Pages has a soft limit of 10 site builds per hour
+MIN_UPLOAD_GAP = 360        # seconds between uploads to GitHub: GitHub Pages has a soft limit of 10 site builds per hour
+SITE_URL = 'https://taynalysis.com'                                 # your own server: no upload limit
+SERVER_TOKEN_FILE = os.path.expanduser('~/.taynalysis_server_token')  # upload token from the server setup (outside the repo)
+SYNC_FILE = os.path.expanduser('~/.taynalysis_sync.json')            # which page files were last sent to the server
+PAGE_EXT = {'.html', '.css', '.js', '.png', '.jpg', '.jpeg', '.webp', '.svg', '.ico', '.woff2'}   # page files, sent when they change
+DATA_EXT = {'.json', '.txt'}                                         # raid data and setup files, sent by --sync-site
 
 ENC, BOSS_NPC = '3420', '-257347-'           # Sszorak encounter ID and creature ID
 VIR_A, VIR_B, BOOM = '1297707', '1299899', '1300089'
@@ -704,8 +709,25 @@ def bar(done, total, label='', width=28):
 
 class Uploader:
     """Publishes the night file and nights.json together as ONE commit (one Pages build)."""
+    live = False
+    where = f'github.com/{REPO}'
+
     def __init__(self, token):
         self.token = token
+
+    def read_text(self, path):
+        """(text, sha) of a file in the repo; ('', None) when it doesn't exist yet."""
+        try:
+            cur = self.api('GET', f'contents/{path}?ref={BRANCH}')
+            return base64.b64decode(cur['content']).decode('utf-8'), cur['sha']
+        except urllib.error.HTTPError as e:
+            if e.code == 404: return '', None
+            raise
+
+    def write_text(self, path, text, sha, message):
+        body = {'message': message, 'content': base64.b64encode(text.encode('utf-8')).decode(), 'branch': BRANCH}
+        if sha: body['sha'] = sha
+        self.api('PUT', f'contents/{path}', body)
 
     def api(self, method, path, body=None):
         return gh(method, f'https://api.github.com/repos/{REPO}/{path}', self.token, body)
@@ -751,6 +773,128 @@ class Uploader:
                     texts = texts[:len(parts)]
                     continue
                 raise
+
+
+class ServerUploader:
+    """Sends files straight to your server: no commits, no build limit, live the moment they land."""
+    live = True
+    where = SITE_URL.split('//', 1)[1]
+
+    def __init__(self, token):
+        self.token = token
+
+    def request(self, method, url, data=None, auth=True):
+        headers = {'User-Agent': 'taynalysis-uploader'}
+        if auth: headers['Authorization'] = f'Bearer {self.token}'
+        if data is not None: headers['Content-Type'] = 'application/octet-stream'
+        req = urllib.request.Request(url, method=method, data=data, headers=headers)
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read()
+
+    def check(self):
+        """True if the server accepts this token."""
+        try:
+            self.request('GET', f'{SITE_URL}/api/check'); return True
+        except urllib.error.HTTPError as e:
+            if e.code == 401: return False
+            raise
+
+    def put(self, path, data):
+        self.request('PUT', f'{SITE_URL}/api/files/{path}', data)
+
+    def get_text(self, path):
+        """A file as the site serves it right now, or None if it isn't there yet."""
+        try:
+            return self.request('GET', f'{SITE_URL}/{path}?t={int(time.time() * 1000)}', auth=False).decode('utf-8')
+        except urllib.error.HTTPError as e:
+            if e.code == 404: return None
+            raise
+
+    def read_text(self, path):
+        return self.get_text(path) or '', None
+
+    def write_text(self, path, text, _sha, _message):
+        self.put(path, text.encode('utf-8'))
+
+    def publish(self, parts, message):
+        """parts: list of (night_file, data, index_path, index_entry). Night file first, then its index."""
+        steps, step, total = len(parts) * 3, 0, 0
+        for f, d, ip, entry in parts:
+            text = json.dumps(d, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+            bar(step, steps, f'Uploading {f} ({fmt_size(len(text))})'); step += 1
+            self.put(f, text); total += len(text)
+            bar(step, steps, f'Reading {ip}'); step += 1
+            cur = self.get_text(ip)
+            try: idx = json.loads(cur) if cur else None
+            except ValueError: idx = None
+            itext = json.dumps(merge_index(idx, entry), indent=1, ensure_ascii=False).encode('utf-8')
+            bar(step, steps, f'Uploading {ip}'); step += 1
+            self.put(ip, itext); total += len(itext)
+        bar(steps, steps, f'Done · {fmt_size(total)} uploaded')
+        print()
+
+
+def get_server_token(force_prompt=False):
+    tok = os.environ.get('TAYNALYSIS_UPLOAD_TOKEN')
+    if tok and not force_prompt: return tok.strip()
+    if os.path.exists(SERVER_TOKEN_FILE) and not force_prompt:
+        with open(SERVER_TOKEN_FILE) as f: return f.read().strip()
+    print('Paste the upload token the server setup printed (it will not show as you type), then press Return:')
+    tok = getpass.getpass('> ').strip()
+    with open(SERVER_TOKEN_FILE, 'w') as f: f.write(tok)
+    os.chmod(SERVER_TOKEN_FILE, 0o600)
+    print(f'Saved to {SERVER_TOKEN_FILE}')
+    return tok
+
+def connect_server():
+    """ServerUploader with a token the server accepts, asking for it again if the saved one is wrong."""
+    up = ServerUploader(get_server_token())
+    for attempt in range(3):
+        try:
+            ok = up.check()
+        except urllib.error.URLError as e:
+            if isinstance(getattr(e, 'reason', None), ssl.SSLError):
+                sys.exit('Python could not verify the server\'s certificate. If you installed Python from python.org, '
+                         'open Applications > Python 3.x and run "Install Certificates.command", then try again. '
+                         'If the server was set up in the last few minutes, wait a minute: its certificate may still be on the way.')
+            sys.exit(f'Could not reach {SITE_URL}: {getattr(e, "reason", e)}')
+        if ok:
+            print(f'[{stamp()}] Connected to {up.where}')
+            return up
+        print(f'[{stamp()}] The server did not accept that upload token.')
+        if attempt == 2: sys.exit('Run the uploader again and paste the token exactly as the server setup printed it.')
+        up = ServerUploader(get_server_token(force_prompt=True))
+
+def site_files(root, with_data):
+    """Site files in the repo folder, as paths relative to it (the server/ folder and dot files stay home)."""
+    out = []
+    for d, dirs, files in os.walk(root):
+        dirs[:] = sorted(x for x in dirs if not x.startswith('.') and x not in ('server', '__pycache__'))
+        for f in sorted(files):
+            ext = os.path.splitext(f)[1].lower()
+            if f.startswith('.') or not (ext in PAGE_EXT or (with_data and ext in DATA_EXT)): continue
+            out.append(os.path.relpath(os.path.join(d, f), root).replace(os.sep, '/'))
+    return out
+
+def send_site(up, root, with_data):
+    """Send page files that changed since the last send (all site files, data included, with with_data)."""
+    try: sent = json.load(open(SYNC_FILE))
+    except (OSError, ValueError): sent = {}
+    sent = sent if isinstance(sent, dict) and sent.get('site') == SITE_URL else {'site': SITE_URL, 'files': {}}
+    files = site_files(root, with_data)
+    todo = [f for f in files if with_data or sent['files'].get(f) != [os.path.getsize(os.path.join(root, f)), int(os.path.getmtime(os.path.join(root, f)))]]
+    if not todo: return 0
+    total = 0
+    for i, f in enumerate(todo):
+        full = os.path.join(root, f)
+        data = open(full, 'rb').read()
+        bar(i, len(todo), f'Sending {f} ({fmt_size(len(data))})')
+        up.put(f, data); total += len(data)
+        sent['files'][f] = [len(data), int(os.path.getmtime(full))]
+    bar(len(todo), len(todo), f'Done · {len(todo)} file{"" if len(todo) == 1 else "s"}, {fmt_size(total)}')
+    print()
+    with open(SYNC_FILE, 'w') as fh: json.dump(sent, fh, indent=1)
+    return len(todo)
 
 
 def date_key(d):
@@ -902,11 +1046,9 @@ def note_change(up, dry, out_dir, sv_override=None):
         sha = None
     else:
         try:
-            cur = up.api('GET', f'contents/{SETUP_PATH}?ref={BRANCH}'); sha = cur['sha']
-            cur_text = base64.b64decode(cur['content']).decode('utf-8')
-        except urllib.error.HTTPError as e:
-            if e.code != 404: print(f'[{stamp()}] Could not read {SETUP_PATH} from GitHub: {e}'); return
-            cur_text, sha = '', None
+            cur_text, sha = up.read_text(SETUP_PATH)
+        except Exception as e:
+            print(f'[{stamp()}] Could not read {SETUP_PATH} from {up.where}: {e}'); return
     old = read_setup(cur_text)
     new = dict(old); new.update(found)                     # anything the note doesn't mention stays as it was
     changes = [(k, old.get(k, []), new.get(k, [])) for k in [q for q, _ in QKEYS] + ['backup', 'group 1', 'group 2', 'group 3'] if old.get(k, []) != new.get(k, [])]
@@ -917,13 +1059,17 @@ def note_change(up, dry, out_dir, sv_override=None):
     if dry:
         with open(os.path.join(out_dir, SETUP_PATH), 'w', encoding='utf-8') as f: f.write(text)
         print(f'[{stamp()}] Wrote {SETUP_PATH} in {out_dir}.'); return
-    body = {'message': 'Twin Fangs setup from the raid note', 'content': base64.b64encode(text.encode('utf-8')).decode(), 'branch': BRANCH}
-    if sha: body['sha'] = sha
     try:
-        up.api('PUT', f'contents/{SETUP_PATH}', body)
-        print(f'[{stamp()}] Saved {SETUP_PATH} to GitHub. The page shows it in a minute or two; in GitHub Desktop, Fetch then Pull to get it locally.')
+        up.write_text(SETUP_PATH, text, sha, 'Twin Fangs setup from the raid note')
     except Exception as e:
-        print(f'[{stamp()}] Could not save {SETUP_PATH} to GitHub: {e}')
+        print(f'[{stamp()}] Could not save {SETUP_PATH} to {up.where}: {e}'); return
+    if up.live:
+        here = os.path.join(os.path.dirname(os.path.abspath(__file__)), SETUP_PATH)   # keep the repo copy the same
+        with open(here, 'w', encoding='utf-8') as f: f.write(text)
+        print(f'[{stamp()}] Saved {SETUP_PATH} to {up.where}; open pages show it within seconds. '
+              'The copy in your repo folder is updated too: commit it in GitHub Desktop when convenient.')
+    else:
+        print(f'[{stamp()}] Saved {SETUP_PATH} to GitHub. The page shows it in a minute or two; in GitHub Desktop, Fetch then Pull to get it locally.')
 
 
 def newest_log():
@@ -942,9 +1088,22 @@ def main():
     if '--enc' in sys.argv: ENC = sys.argv[sys.argv.index('--enc') + 1]
     if '--boss' in sys.argv: BOSS_NPC = '-' + sys.argv[sys.argv.index('--boss') + 1] + '-'
 
-    up = None if dry else Uploader(get_token())
     sv_override = sys.argv[sys.argv.index('--sv') + 1] if '--sv' in sys.argv else None
-    if up:
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    # your server unless --github is given; the first run asks for the server's upload token
+    use_server = not dry and '--github' not in sys.argv
+    if '--sync-site' in sys.argv:
+        if not use_server: sys.exit('--sync-site sends the site to your server; leave out --dry-run and --github.')
+        up = connect_server()
+        print(f'[{stamp()}] Sending every page and data file in {repo_dir} to {up.where}...')
+        n = send_site(up, repo_dir, with_data=True)
+        print(f'[{stamp()}] Sent {n} files. Open {SITE_URL} to check it.')
+        return
+    up = None if dry else connect_server() if use_server else Uploader(get_token())
+    if use_server:
+        n = send_site(up, repo_dir, with_data=False)       # page changes since the last run go live now
+        if n: print(f'[{stamp()}] Sent {n} changed page file{"" if n == 1 else "s"} to {up.where}.')
+    if up and not up.live:
         try: gh('GET', f'https://api.github.com/repos/{REPO}', up.token)
         except urllib.error.HTTPError as e:
             sys.exit(f'GitHub said {e.code} for {REPO}. Check the token has Contents read and write on that repository.')
@@ -961,7 +1120,8 @@ def main():
 
     dec, pos = None, 0
     print(f'[{stamp()}] Watching {LOG_DIR} for Sszorak and Twin Fangs pulls. Press Control-C to stop.')
-    print(f'[{stamp()}] Type "push" and press Return to upload right now instead of waiting.')
+    gap = 0 if (up and up.live) else MIN_UPLOAD_GAP      # your server takes every pull the moment it ends
+    if not (up and up.live): print(f'[{stamp()}] Type "push" and press Return to upload right now instead of waiting.')
     print(f'[{stamp()}] Type "notechange" and press Return to copy kicks and soak groups from the raid note into {SETUP_PATH}.')
 
 
@@ -997,7 +1157,7 @@ def main():
         print(f'[{stamp()}] Uploading {", ".join(f for f, _, _, _ in parts)} ({fmt_size(size)}): {what}')
         try:
             up.publish(parts, f'Raid data: {what}')
-            print(f'[{stamp()}] Uploaded. The site updates in a minute or two.')
+            print(f'[{stamp()}] Uploaded. ' + ('Live on the site now.' if up.live else 'The site updates in a minute or two.'))
             return True
         except Exception as e:
             print(); print(f'[{stamp()}] Upload failed, will try again shortly: {e}')
@@ -1036,7 +1196,7 @@ def main():
                     nf = len(fangs.pulls) + (1 if fangs.cur and fangs.cur['twin'] else 0)
                     print(f'\n[{stamp()}] Found {n} Sszorak pull{"" if n == 1 else "s"} and {nf} Twin Fangs pull{"" if nf == 1 else "s"} so far')
                 # a pull ended (or first look at a log with Sszorak pulls): queue an upload
-                wait = MIN_UPLOAD_GAP - (time.time() - last_upload)
+                wait = gap - (time.time() - last_upload)
                 # only a finished pull queues an upload; a pull that just started doesn't use up the 6-minute slot
                 done = (parser.finished, fangs.finished)
                 if sum(done) > 0 and done != seen_finished:
@@ -1054,7 +1214,7 @@ def main():
                     if send():
                         pending, last_upload = False, time.time()
                     else:
-                        last_upload = time.time() - MIN_UPLOAD_GAP + 30   # retry in 30 seconds
+                        last_upload = time.time() - gap + (10 if up.live else 30)   # retry shortly
             if once: break
             time.sleep(POLL_SECONDS)
     except KeyboardInterrupt:

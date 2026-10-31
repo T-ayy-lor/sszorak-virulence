@@ -11,11 +11,11 @@ from datetime import datetime, timezone
 
 # ---- settings ----
 LOG_DIR = '/Applications/World of Warcraft/_retail_/Logs'
-REPO = 't-ayy-lor/sszorak-virulence'      # owner/repository of your GitHub Pages site
+REPO = 't-ayy-lor/taynalysis'      # owner/repository of your GitHub Pages site
 BRANCH = 'main'
 NIGHT_DIR = 'nights'                       # one file per night (per combat log)
 INDEX_PATH = 'nights.json'                 # list of all nights, read by the page's night picker
-TOKEN_FILE = os.path.expanduser('~/.sszorak_uploader_token')
+TOKEN_FILE = os.path.expanduser('~/.taynalysis_uploader_token')
 POLL_SECONDS = 3
 MIN_UPLOAD_GAP = 360        # seconds between uploads: GitHub Pages has a soft limit of 10 site builds per hour
 
@@ -688,7 +688,7 @@ def get_token():
 def gh(method, url, token, body=None):
     req = urllib.request.Request(url, method=method, data=json.dumps(body).encode() if body else None,
                                  headers={'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github+json',
-                                          'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'sszorak-uploader'})
+                                          'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'taynalysis-uploader'})
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read() or b'{}')
 
